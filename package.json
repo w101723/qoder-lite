@@ -1,0 +1,15 @@
+{
+  "name": "qoder-lite",
+  "version": "0.1.0",
+  "description": "Standalone Qoder client extracted from 9Router — PAT auth, device-flow OAuth, COSY-signed chat requests",
+  "type": "module",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/smoke.mjs && node test/server-unit.mjs && node test/server-integration.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}
