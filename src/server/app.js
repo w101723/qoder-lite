@@ -142,6 +142,16 @@ async function handleChat(req, res, client) {
     res.writeHead(200, STREAM_HEADERS);
 
     const reader = response.body.getReader();
+    // Cancel the body reader immediately when the downstream disconnects.
+    // Do not rely solely on fetch propagating its AbortSignal: injected or
+    // non-standard response streams may ignore that signal, and the pump may
+    // currently be parked on backpressure rather than reader.read().
+    const cancelReader = () => {
+      reader.cancel(controller.signal.reason).catch(() => {});
+    };
+    if (controller.signal.aborted) cancelReader();
+    else controller.signal.addEventListener("abort", cancelReader, { once: true });
+
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -169,6 +179,7 @@ async function handleChat(req, res, client) {
       }
       try { res.end(); } catch { /* already closed */ }
     } finally {
+      controller.signal.removeEventListener("abort", cancelReader);
       await reader.cancel().catch(() => {});
     }
     return;
