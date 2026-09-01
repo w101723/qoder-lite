@@ -6,8 +6,7 @@
  *
  * Exposes the Qoder client through /v1/chat/completions, /v1/models, the
  * legacy new-api billing endpoints, and /v1/qoder/usage. Single-account,
- * environment-configured, zero runtime dependencies (design doc:
- * docs/superpowers/specs/2026-09-01-openai-http-service-design.md).
+ * environment-configured, and zero runtime dependencies.
  */
 
 import http from "node:http";
