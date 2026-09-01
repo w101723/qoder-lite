@@ -99,7 +99,8 @@ Authorization: Bearer <API_KEY>
       "id": "auto",
       "object": "model",
       "created": 0,
-      "owned_by": "qoder"
+      "owned_by": "qoder",
+      "dmodel": "DeepSeek-V4-Pro"
     }
   ]
 }

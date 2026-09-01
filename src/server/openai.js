@@ -16,6 +16,7 @@ export function toOpenAiModelList(catalog) {
       object: "model",
       created: 0,
       owned_by: "qoder",
+      dmodel: typeof m.dmodel === "string" ? m.dmodel : "",
     })),
   };
 }

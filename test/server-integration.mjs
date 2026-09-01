@@ -42,7 +42,13 @@ function makeFakeClient(overrides = {}) {
   const client = {
     async listModels() {
       state.listModelsCalls++;
-      return { models: [{ id: "auto" }, { id: "ultimate" }], rawConfigs: new Map() };
+      return {
+        models: [
+          { id: "auto", dmodel: "DeepSeek-V4-Pro" },
+          { id: "ultimate", dmodel: "Claude-Sonnet" },
+        ],
+        rawConfigs: new Map(),
+      };
     },
     async chatComplete(body, options = {}) {
       state.chatCompleteCalls++;
@@ -134,8 +140,8 @@ ok("GET /v1/models lists the live catalog", async () => {
     assert.deepEqual(await res.json(), {
       object: "list",
       data: [
-        { id: "auto", object: "model", created: 0, owned_by: "qoder" },
-        { id: "ultimate", object: "model", created: 0, owned_by: "qoder" },
+        { id: "auto", object: "model", created: 0, owned_by: "qoder", dmodel: "DeepSeek-V4-Pro" },
+        { id: "ultimate", object: "model", created: 0, owned_by: "qoder", dmodel: "Claude-Sonnet" },
       ],
     });
     assert.equal(fake.state.listModelsCalls, 1);

@@ -123,6 +123,7 @@ export async function fetchQoderCatalogRaw(credentials, options = {}) {
     models.push({
       id: key,
       name: `${display}`,
+      dmodel: typeof entry.display_name === "string" ? entry.display_name : "",
       contextLength: ctx,
       isVL: !!entry.is_vl,
       isReasoning: !!entry.is_reasoning,

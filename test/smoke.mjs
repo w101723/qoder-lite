@@ -382,7 +382,7 @@ ok("QoderLiteClient end-to-end (PAT): models + chatStream against a mock upstrea
   clearPatJobCache();
   const modelListBody = {
     chat: [
-      { key: "auto", display_name: "Auto", max_input_tokens: 131072, is_reasoning: false, max_output_tokens: 32768, model_config: { source: "system" } },
+      { key: "auto", display_name: "DeepSeek-V4-Pro", max_input_tokens: 131072, is_reasoning: false, max_output_tokens: 32768, model_config: { source: "system" } },
       { key: "ultimate", display_name: "Ultimate", enable: false, model_config: { source: "system" } },
     ],
   };
@@ -419,6 +419,7 @@ ok("QoderLiteClient end-to-end (PAT): models + chatStream against a mock upstrea
 
   const catalog = await client.listModels();
   assert.deepEqual(catalog.models.map((m) => m.id), ["auto"], "enable:false models are hidden from the list");
+  assert.equal(catalog.models[0].dmodel, "DeepSeek-V4-Pro", "display_name is exposed as dmodel");
   assert.ok(catalog.rawConfigs.has("ultimate"), "…but still cached for chat");
 
   const chunks = [];

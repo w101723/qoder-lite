@@ -144,12 +144,17 @@ ok("redactSecrets hides pt-/jt-/dt- tokens and Bearer values", () => {
 
 // ── OpenAI conversions ──────────────────────────────────────────────────────
 
-ok("toOpenAiModelList converts the catalog", () => {
-  const list = toOpenAiModelList({ models: [{ id: "auto" }, { id: "ultimate" }] });
+ok("toOpenAiModelList converts the catalog and exposes dmodel", () => {
+  const list = toOpenAiModelList({
+    models: [
+      { id: "auto", dmodel: "DeepSeek-V4-Pro" },
+      { id: "ultimate" },
+    ],
+  });
   assert.equal(list.object, "list");
   assert.deepEqual(list.data, [
-    { id: "auto", object: "model", created: 0, owned_by: "qoder" },
-    { id: "ultimate", object: "model", created: 0, owned_by: "qoder" },
+    { id: "auto", object: "model", created: 0, owned_by: "qoder", dmodel: "DeepSeek-V4-Pro" },
+    { id: "ultimate", object: "model", created: 0, owned_by: "qoder", dmodel: "" },
   ]);
   // empty catalog → empty list, not an error
   assert.deepEqual(toOpenAiModelList({ models: [] }).data, []);
