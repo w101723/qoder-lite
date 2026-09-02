@@ -68,6 +68,16 @@ Authorization: Bearer <API_KEY>
 
 ## 对外 API
 
+| 方法 | 路径 | 鉴权 | 说明 |
+|---|---|---:|---|
+| `GET` | `/health` | 否 | 服务健康检查 |
+| `GET` | `/v1/models` | 是 | 获取 Qoder 模型列表及上游 `display_name` 对应的 `dmodel` |
+| `POST` | `/v1/chat/completions` | 是 | OpenAI-compatible Chat Completions，支持流式与非流式 |
+| `GET` | `/v1/dashboard/billing/subscription` | 是 | 用户总 credits，使用 Dashboard Billing 订阅格式 |
+| `GET` | `/v1/dashboard/billing/usage` | 是 | 用户已用 credits 原始值，不乘以 `100` |
+| `GET` | `/v1/dashboard/billing/credit_grants` | 是 | 可用 credits 原始值，即 `user.total - user.used` |
+| `GET` | `/v1/qoder/usage` | 是 | 完整的 Qoder 用户及组织额度信息 |
+
 ### 健康检查
 
 ```http
@@ -242,14 +252,36 @@ curl "http://127.0.0.1:3000/v1/dashboard/billing/usage?start_date=2026-09-01&end
 ```json
 {
   "object": "list",
-  "total_usage": 30000
+  "total_usage": 300
 }
 ```
 
 计算规则：
 
 ```text
-total_usage = round(Qoder 用户已用 credits × 100)
+total_usage = Qoder 用户已用 credits 原始值
+```
+
+### 可用额度
+
+```http
+GET /v1/dashboard/billing/credit_grants
+Authorization: Bearer <API_KEY>
+```
+
+无请求参数。`total_available` 为 Qoder 用户总 credits 减去已用 credits 的原始值，不做倍数转换或取整。
+
+```json
+{
+  "object": "Credits",
+  "total_available": 2873
+}
+```
+
+计算规则：
+
+```text
+total_available = Qoder user.total - Qoder user.used
 ```
 
 ### Qoder 原生额度

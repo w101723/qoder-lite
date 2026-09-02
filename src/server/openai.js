@@ -40,9 +40,8 @@ export function toBillingSubscription(usage) {
 }
 
 /**
- * Convert `client.getUsage()` to the legacy Dashboard Billing usage shape.
- * new-api divides total_usage by 100 to render a "balance", so usage is
- * multiplied back by 100 here: total_usage = round(usage.user.used × 100).
+ * Return the current Qoder user usage in the legacy Dashboard Billing shape.
+ * The value remains in Qoder credits and is not multiplied or rounded.
  * Date parameters are accepted by callers for compatibility but Qoder only
  * provides current quota-cycle totals, not historical ranges.
  */
@@ -50,6 +49,19 @@ export function toBillingUsage(usage) {
   const used = Number(usage?.user?.used) || 0;
   return {
     object: "list",
-    total_usage: Math.round(used * 100),
+    total_usage: used,
+  };
+}
+
+/**
+ * Return the user's currently available Qoder credits. Both operands remain in
+ * their original credit unit; the result is not multiplied or rounded.
+ */
+export function toCreditGrants(usage) {
+  const total = Number(usage?.user?.total) || 0;
+  const used = Number(usage?.user?.used) || 0;
+  return {
+    object: "Credits",
+    total_available: total - used,
   };
 }

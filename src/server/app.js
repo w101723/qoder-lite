@@ -10,7 +10,12 @@
 import { extractBearerToken, isApiKeyValid } from "./auth.js";
 import { readJsonBody } from "./body.js";
 import { ServiceError, toServiceError, redactSecrets } from "./errors.js";
-import { toOpenAiModelList, toBillingSubscription, toBillingUsage } from "./openai.js";
+import {
+  toOpenAiModelList,
+  toBillingSubscription,
+  toBillingUsage,
+  toCreditGrants,
+} from "./openai.js";
 
 const STREAM_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -26,6 +31,7 @@ const ROUTES = {
   "/v1/chat/completions": "POST",
   "/v1/dashboard/billing/subscription": "GET",
   "/v1/dashboard/billing/usage": "GET",
+  "/v1/dashboard/billing/credit_grants": "GET",
   "/v1/qoder/usage": "GET",
 };
 
@@ -265,6 +271,8 @@ export function createRequestHandler({ client, apiKey, log = console }) {
             return await handleUsageRoute(res, client, toBillingSubscription);
           case "/v1/dashboard/billing/usage":
             return await handleUsageRoute(res, client, toBillingUsage);
+          case "/v1/dashboard/billing/credit_grants":
+            return await handleUsageRoute(res, client, toCreditGrants);
           case "/v1/qoder/usage":
             return await handleUsageRoute(res, client, (usage) => usage);
           default:

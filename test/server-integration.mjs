@@ -238,11 +238,19 @@ ok("GET /v1/dashboard/billing/subscription maps credits to the three limits", as
   });
 });
 
-ok("GET /v1/dashboard/billing/usage returns round(used × 100)", async () => {
+ok("GET /v1/dashboard/billing/usage returns the original used credits", async () => {
   await withServer({}, async (base) => {
     const res = await fetch(`${base}/v1/dashboard/billing/usage?start_date=2026-08-01&end_date=2026-08-31`, { headers: { Authorization: `Bearer ${API_KEY}` } });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { object: "list", total_usage: 30000 });
+    assert.deepEqual(await res.json(), { object: "list", total_usage: 300 });
+  });
+});
+
+ok("GET /v1/dashboard/billing/credit_grants returns total minus used", async () => {
+  await withServer({}, async (base) => {
+    const res = await fetch(`${base}/v1/dashboard/billing/credit_grants`, { headers: { Authorization: `Bearer ${API_KEY}` } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { object: "Credits", total_available: 700 });
   });
 });
 

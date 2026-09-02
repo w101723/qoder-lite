@@ -11,7 +11,12 @@ import assert from "node:assert/strict";
 import { loadServerConfig, ConfigError } from "../src/server/config.js";
 import { extractBearerToken, isApiKeyValid } from "../src/server/auth.js";
 import { ServiceError, toServiceError, redactSecrets } from "../src/server/errors.js";
-import { toOpenAiModelList, toBillingSubscription, toBillingUsage } from "../src/server/openai.js";
+import {
+  toOpenAiModelList,
+  toBillingSubscription,
+  toBillingUsage,
+  toCreditGrants,
+} from "../src/server/openai.js";
 import { validateChatBody } from "../src/server/app.js";
 import { MAX_BODY_BYTES } from "../src/server/body.js";
 
@@ -170,11 +175,20 @@ ok("toBillingSubscription maps all three limits to usage.user.total", () => {
   assert.equal(sub.access_until, 0);
 });
 
-ok("toBillingUsage rounds used × 100", () => {
-  assert.deepEqual(toBillingUsage({ user: { used: 300 } }), { object: "list", total_usage: 30000 });
-  assert.equal(toBillingUsage({ user: { used: 0.5 } }).total_usage, 50);
-  assert.equal(toBillingUsage({ user: { used: 1.005 } }).total_usage, 100); // round(), not floor()
+ok("toBillingUsage returns the original used credits", () => {
+  assert.deepEqual(toBillingUsage({ user: { used: 300 } }), { object: "list", total_usage: 300 });
+  assert.equal(toBillingUsage({ user: { used: 0.5 } }).total_usage, 0.5);
+  assert.equal(toBillingUsage({ user: { used: 1.005 } }).total_usage, 1.005);
   assert.equal(toBillingUsage({ user: {} }).total_usage, 0);
+});
+
+ok("toCreditGrants returns total minus used without scaling", () => {
+  assert.deepEqual(
+    toCreditGrants({ user: { total: 3000, used: 127 } }),
+    { object: "Credits", total_available: 2873 },
+  );
+  assert.equal(toCreditGrants({ user: { total: 10.5, used: 1.25 } }).total_available, 9.25);
+  assert.equal(toCreditGrants({ user: {} }).total_available, 0);
 });
 
 // ── chat validation ─────────────────────────────────────────────────────────
