@@ -61,7 +61,7 @@ export function toCreditGrants(usage) {
   const total = Number(usage?.user?.total) || 0;
   const used = Number(usage?.user?.used) || 0;
   return {
-    object: "Credits",
+    object: "credit_summary",
     total_available: total - used,
   };
 }

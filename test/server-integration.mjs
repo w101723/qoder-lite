@@ -250,7 +250,7 @@ ok("GET /v1/dashboard/billing/credit_grants returns total minus used", async () 
   await withServer({}, async (base) => {
     const res = await fetch(`${base}/v1/dashboard/billing/credit_grants`, { headers: { Authorization: `Bearer ${API_KEY}` } });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { object: "Credits", total_available: 700 });
+    assert.deepEqual(await res.json(), { object: "credit_summary", total_available: 700 });
   });
 });
 

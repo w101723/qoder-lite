@@ -273,7 +273,7 @@ Authorization: Bearer <API_KEY>
 
 ```json
 {
-  "object": "Credits",
+  "object": "credit_summary",
   "total_available": 2873
 }
 ```

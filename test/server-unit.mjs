@@ -185,7 +185,7 @@ ok("toBillingUsage returns the original used credits", () => {
 ok("toCreditGrants returns total minus used without scaling", () => {
   assert.deepEqual(
     toCreditGrants({ user: { total: 3000, used: 127 } }),
-    { object: "Credits", total_available: 2873 },
+    { object: "credit_summary", total_available: 2873 },
   );
   assert.equal(toCreditGrants({ user: { total: 10.5, used: 1.25 } }).total_available, 9.25);
   assert.equal(toCreditGrants({ user: {} }).total_available, 0);
