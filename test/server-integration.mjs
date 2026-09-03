@@ -317,9 +317,10 @@ ok("a non-JSON content type is a 415", async () => {
   });
 });
 
-ok("bodies over 1 MiB are rejected with 413", async () => {
+ok("bodies over 100 MiB are rejected with 413", async () => {
   await withServer({}, async (base) => {
-    const big = JSON.stringify({ model: "auto", messages: [{ role: "user", content: "x".repeat(1024 * 1024) }] });
+    // Raw over-limit bytes are enough: the 413 fires on size before parsing.
+    const big = "x".repeat(100 * 1024 * 1024 + 1);
     const res = await fetch(`${base}/v1/chat/completions`, {
       method: "POST",
       headers: jsonHeaders,

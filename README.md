@@ -126,7 +126,7 @@ Authorization: Bearer <API_KEY>
 Content-Type: application/json
 ```
 
-请求体最大为 1 MiB。
+请求体最大为 100 MiB。
 
 #### 请求参数
 

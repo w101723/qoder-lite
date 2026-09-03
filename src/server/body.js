@@ -2,19 +2,19 @@
  * Bounded JSON request-body parsing.
  *
  * Bodies larger than the limit are rejected with a typed error BEFORE JSON
- * parsing (design doc §6: 1 MiB cap). The request socket is destroyed so a
- * hostile client cannot keep streaming.
+ * parsing. The request socket is destroyed so a hostile client cannot keep
+ * streaming.
  */
 
 import { ServiceError } from "./errors.js";
 
-export const MAX_BODY_BYTES = 1024 * 1024;
+export const MAX_BODY_BYTES = 100 * 1024 * 1024;
 
 /**
  * Read and JSON-parse a request body.
  *
  * @param {import("http").IncomingMessage} req
- * @param {number} [limit] Defaults to 1 MiB.
+ * @param {number} [limit] Defaults to 100 MiB.
  * @returns {Promise<any>} Parsed JSON value.
  * @throws {ServiceError} 413 request_too_large / 400 invalid_json.
  */

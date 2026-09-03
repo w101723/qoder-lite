@@ -204,8 +204,8 @@ ok("validateChatBody flags missing model and messages", () => {
   assert.equal(validateChatBody("nope"), "body");
 });
 
-ok("body limit is 1 MiB", () => {
-  assert.equal(MAX_BODY_BYTES, 1024 * 1024);
+ok("body limit is 100 MiB", () => {
+  assert.equal(MAX_BODY_BYTES, 100 * 1024 * 1024);
 });
 
 // ── runner ──────────────────────────────────────────────────────────────────
