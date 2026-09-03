@@ -45,6 +45,9 @@ export {
   unwrapQoderSSEResponse,
   normalizeMessages,
   isBillingBlock,
+  isThrottleBlock,
+  extractRetryAfterSeconds,
+  QoderUpstreamStatusError,
 } from "./src/chat.js";
 
 export { buildCosyHeaders, generateMachineId } from "./src/cosy.js";

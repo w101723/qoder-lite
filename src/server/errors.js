@@ -75,6 +75,15 @@ export function toServiceError(error) {
       "insufficient_quota",
     );
   }
+  if (name === "QoderUpstreamStatusError" && error?.isThrottle) {
+    // Retries exhausted on a queue throttle (code 10605) — still transient.
+    return serviceError(
+      429,
+      `Qoder queue throttled (retried): ${message.slice(0, 300)}`,
+      "rate_limit_error",
+      "qoder_throttled",
+    );
+  }
   if (isQoderAuthRejection(message)) {
     return serviceError(
       502,

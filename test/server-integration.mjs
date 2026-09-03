@@ -399,6 +399,25 @@ ok("a Qoder auth rejection maps to 502 qoder_auth_error, not 401", async () => {
   });
 });
 
+ok("an exhausted upstream 403 throttle maps to 429 qoder_throttled", async () => {
+  await withServer({
+    chat: async () => {
+      const error = new Error('qoder upstream returned 403: {"code":"10605","retryAfterSeconds":2}');
+      error.name = "QoderUpstreamStatusError";
+      error.isThrottle = true;
+      throw error;
+    },
+  }, async (base) => {
+    const res = await fetch(`${base}/v1/chat/completions`, {
+      method: "POST", headers: jsonHeaders,
+      body: JSON.stringify({ model: "auto", messages: [{ role: "user", content: "hi" }], stream: true }),
+    });
+    assert.equal(res.status, 429);
+    const body = await res.json();
+    assert.equal(body.error.code, "qoder_throttled");
+  });
+});
+
 // ── downstream disconnect ────────────────────────────────────────────────────
 
 ok("a downstream disconnect aborts the upstream request", async () => {

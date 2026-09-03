@@ -217,15 +217,41 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
 }
 
 /**
- * Check if a qoder error message indicates a billing/quota block.
- * Signatures: code 112 (quota exhausted), code 10605 (queue throttle),
- * pricingUrl field.
+ * Strip JSON-string escapes so code fields nested inside error payloads
+ * match. Qoder nests error bodies multiple levels deep:
+ *   {"code":"403","message":"{\"code\":\"10605\",...}"}
+ * — after removing backslashes the inner "code":"10605" is matchable.
+ */
+function unescaped(text) {
+  return String(text || "").replace(/\\/g, "");
+}
+
+/**
+ * Check if a qoder error message indicates a hard quota/billing block:
+ * code 112 (quota exhausted) or a pricingUrl field. NOT retryable — the
+ * quota will not recover within a request's lifetime.
  */
 export function isBillingBlock(inner) {
   if (!inner || typeof inner !== "string") return false;
-  const lowerMsg = inner.toLowerCase();
-  // Match: {"code":"112",...}, {"code":"10605",...}, or pricingUrl field
-  return /\"code\"\s*:\s*\"(112|10605)\"/.test(inner) || lowerMsg.includes("pricingurl");
+  const normalized = unescaped(inner);
+  return /\"code\"\s*:\s*\"?112\"?(?!\d)/.test(normalized)
+    || normalized.toLowerCase().includes("pricingurl");
+}
+
+/**
+ * Check if a qoder error message indicates a queue throttle (code 10605).
+ * These carry a retryAfterSeconds hint and are transient by design.
+ */
+export function isThrottleBlock(inner) {
+  if (!inner || typeof inner !== "string") return false;
+  return /\"code\"\s*:\s*\"?10605\"?(?!\d)/.test(unescaped(inner));
+}
+
+/** Extract retryAfterSeconds from a throttle payload (0 when absent). */
+export function extractRetryAfterSeconds(inner) {
+  if (!inner || typeof inner !== "string") return 0;
+  const match = /\"retryAfterSeconds\"\s*:\s*\"?(\d+)\"?/.exec(unescaped(inner));
+  return match ? Number(match[1]) : 0;
 }
 
 /**
@@ -317,9 +343,11 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
  *   data: {"statusCodeValue":200,"body":"{\"choices\":[{\"delta\":{...}}]}"}
  *
  * The inner body is an OpenAI streaming chunk (or "[DONE]"). We unwrap it
- * and re-emit as `data: <inner>\n\n`. Non-200 envelopes become a synthetic
- * OpenAI error chunk + [DONE]. Billing/quota blocks (code 112/10605,
- * pricingUrl) throw QoderBillingError so callers can trigger fallback.
+ * and re-emit as `data: <inner>\n\n`. Hard billing blocks (code 112,
+ * pricingUrl) in the first frame throw QoderBillingError; any other non-200
+ * first frame throws QoderUpstreamStatusError so callers can retry transient
+ * 403s (e.g. the 10605 queue throttle). Mid-stream non-200 envelopes become
+ * a synthetic OpenAI error chunk + [DONE] (too late to retry).
  *
  * Critical: Qoder's SSE often keeps the socket open after the terminal
  * [DONE]/error frame (agent keepalive), so on terminal events we cancel
@@ -331,11 +359,17 @@ export async function unwrapQoderSSEResponse(response, model) {
   const decoder = new TextDecoder();
   const reader = response.body.getReader();
 
-  // Peek the first frame to surface billing blocks as an exception.
+  // Peek the first frame to surface billing blocks and upstream status
+  // errors as exceptions before any bytes are piped downstream.
   const peek = await peekFirstQoderFrame(reader, decoder);
   if (peek?.isBilling) {
     await reader.cancel().catch(() => {});
     throw new QoderBillingError(peek.message, peek.statusVal);
+  }
+  if (peek && typeof peek.statusVal === "number") {
+    // Non-billing non-200 first frame (typically the 403 queue throttle).
+    await reader.cancel().catch(() => {});
+    throw new QoderUpstreamStatusError(peek.statusVal, peek.message || "");
   }
 
   // Normal flow: re-process every byte the peek consumed, then continue.
@@ -513,6 +547,9 @@ async function peekFirstQoderFrame(reader, decoder) {
     if (statusVal !== 200 && isBillingBlock(inner)) {
       return { isBilling: true, statusVal, message: inner || `qoder billing block (${statusVal})` };
     }
+    if (statusVal !== 200) {
+      return { isBilling: false, statusVal, message: inner, consumed };
+    }
     return { isBilling: false, consumed };
   }
 }
@@ -523,5 +560,21 @@ export class QoderBillingError extends Error {
     super(message);
     this.name = "QoderBillingError";
     this.statusVal = statusVal;
+  }
+}
+
+/**
+ * Thrown when the first upstream frame carries a non-200 status that is not
+ * a hard billing block — typically the 403 queue-throttle envelope. Unlike
+ * QoderBillingError these are transient: callers should log and retry.
+ */
+export class QoderUpstreamStatusError extends Error {
+  constructor(statusVal, inner) {
+    super(`qoder upstream returned ${statusVal}: ${truncate(inner, 300)}`);
+    this.name = "QoderUpstreamStatusError";
+    this.statusVal = statusVal;
+    this.inner = inner || "";
+    this.isThrottle = isThrottleBlock(this.inner);
+    this.retryAfterSeconds = this.isThrottle ? extractRetryAfterSeconds(this.inner) : 0;
   }
 }

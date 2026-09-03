@@ -14,8 +14,34 @@
 
 import { resolveQoderCredentials, isQoderPat } from "./pat.js";
 import { resolveQoderModels, getQoderModelConfig, invalidateCatalog, clearCatalogCache, fetchQoderCatalogRaw } from "./models.js";
-import { sendQoderChatRequest, unwrapQoderSSEResponse, QoderBillingError } from "./chat.js";
+import {
+  sendQoderChatRequest,
+  unwrapQoderSSEResponse,
+  QoderBillingError,
+  QoderUpstreamStatusError,
+} from "./chat.js";
 import { resolveAndFetchUsage } from "./usage.js";
+
+/** Retry backoff: upstream hint (retryAfterSeconds) when present, else ~1s/attempt. */
+function computeRetryDelayMs(error, attempt, overrideMs) {
+  if (Number.isFinite(overrideMs) && overrideMs >= 0) return overrideMs;
+  const hintedMs = (error?.retryAfterSeconds || 0) * 1000;
+  return Math.min(hintedMs || attempt * 1000, 15_000);
+}
+
+/** Abortable sleep — rejects with the signal's reason if the caller goes away. */
+function sleep(ms, signal) {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("aborted"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
+    const onAbort = () => { cleanup(); reject(signal.reason ?? new Error("aborted")); };
+    function cleanup() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 export class QoderLiteClient {
   /**
@@ -57,23 +83,66 @@ export class QoderLiteClient {
   /**
    * Send a chat request and get back a plain OpenAI SSE Response.
    *
+   * Upstream 403s — either the HTTP status or the first SSE envelope frame —
+   * are logged and retried (default: up to 10 attempts, i.e. 9 retries).
+   * Qoder returns 403 for transient queue throttles (code 10605 with
+   * retryAfterSeconds), which typically succeed on the next attempt. Hard
+   * quota blocks (code 112) still throw QoderBillingError immediately.
+   *
    * @param {object} body  OpenAI-style chat body: { model, messages, max_tokens?, tools? }.
    *                       `model` accepts a bare key ("auto") or "qoder/auto".
+   * @param {object} [options]  { signal?, maxRetries?, retryDelayMs?, connectTimeoutMs? }
    * @returns {Promise<Response>}  text/event-stream response with unwrapped
    *                               OpenAI chunks; consume with response.body.
-   * @throws {QoderBillingError} on quota/billing blocks in the first frame.
+   * @throws {QoderBillingError} on quota blocks in the first frame.
+   * @throws {QoderUpstreamStatusError} when 403 retries are exhausted.
    */
   async chat(body, options = {}) {
-    const { response } = await sendQoderChatRequest({
-      model: body.model,
-      body,
-      credentials: this.credentials,
-      signal: options.signal,
-      connectTimeoutMs: options.connectTimeoutMs,
-      fetchImpl: this.options.fetchImpl,
-      log: this.options.log,
-    });
-    return unwrapQoderSSEResponse(response, body.model);
+    // Default: 10 total attempts (1 initial + 9 retries).
+    const maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0
+      ? options.maxRetries
+      : 9;
+    const log = this.options.log;
+    let lastError = null;
+
+    for (let attempt = 0; ; attempt++) {
+      if (attempt > 0) {
+        const delayMs = computeRetryDelayMs(lastError, attempt, options.retryDelayMs);
+        log?.warn?.(
+          `[qoder-lite] qoder upstream 403 (attempt ${attempt}/${maxRetries}); retrying in ${delayMs}ms: ${lastError.message}`,
+        );
+        await sleep(delayMs, options.signal);
+      }
+
+      const { response } = await sendQoderChatRequest({
+        model: body.model,
+        body,
+        credentials: this.credentials,
+        signal: options.signal,
+        connectTimeoutMs: options.connectTimeoutMs,
+        fetchImpl: this.options.fetchImpl,
+        log,
+      });
+
+      let upstreamError = null;
+      if (response.status === 403) {
+        // HTTP-level 403: read the body for diagnostics, then treat it like
+        // an envelope 403 — retryable.
+        const text = await response.text().catch(() => "");
+        upstreamError = new QoderUpstreamStatusError(403, text);
+      } else {
+        try {
+          return await unwrapQoderSSEResponse(response, body.model);
+        } catch (error) {
+          if (error?.name === "QoderUpstreamStatusError") upstreamError = error;
+          else throw error;
+        }
+      }
+
+      const retryable = upstreamError.statusVal === 403 || upstreamError.isThrottle;
+      if (!retryable || attempt >= maxRetries) throw upstreamError;
+      lastError = upstreamError;
+    }
   }
 
   /**

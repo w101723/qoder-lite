@@ -20,9 +20,12 @@ import {
   buildChatUrl,
   normalizeMessages,
   isBillingBlock,
+  isThrottleBlock,
+  extractRetryAfterSeconds,
   unwrapQoderSSEResponse,
   QoderLiteClient,
   QoderBillingError,
+  QoderUpstreamStatusError,
   QODER_CHAT_URL_ENCODED,
   clearCatalogCache,
 } from "../index.js";
@@ -236,12 +239,37 @@ ok("normalizeMessages hoists system and flattens multipart content", () => {
   assert.equal(messages[0].content, "hi \nthere");
 });
 
-ok("isBillingBlock matches codes 112/10605 and pricingUrl", () => {
+ok("isBillingBlock matches quota code 112 and pricingUrl in any escaping", () => {
   assert.equal(isBillingBlock('{"code":"112","message":"quota"}'), true);
-  assert.equal(isBillingBlock('{"code":"10605"}'), true);
+  assert.equal(isBillingBlock('{"code":112}'), true);
+  // nested inside escaped JSON string values (the real 403 envelope shape)
+  const nested = JSON.stringify({
+    code: "403",
+    message: JSON.stringify({ code: "112", message: "quota exhausted" }),
+  });
+  assert.equal(isBillingBlock(nested), true);
   assert.equal(isBillingBlock('{"pricingUrl":"https://qoder.com/pricing"}'), true);
+  assert.equal(isBillingBlock('{"code":"10605"}'), false, "throttle is retryable, not a hard billing block");
+  assert.equal(isBillingBlock('{"code":"1123"}'), false);
   assert.equal(isBillingBlock('{"code":"500"}'), false);
   assert.equal(isBillingBlock(""), false);
+});
+
+ok("isThrottleBlock matches queue throttle 10605 and extracts retryAfterSeconds", () => {
+  assert.equal(isThrottleBlock('{"code":"10605"}'), true);
+  assert.equal(isThrottleBlock('{"code":10605}'), true);
+  // the real-world nested shape: 10605 two levels deep inside a 403 envelope
+  const nested = JSON.stringify({
+    code: "403",
+    message: JSON.stringify({
+      code: "10605",
+      message: JSON.stringify({ isQueued: false, modelKey: "gfmodel", retryAfterSeconds: 2 }),
+    }),
+  });
+  assert.equal(isThrottleBlock(nested), true);
+  assert.equal(extractRetryAfterSeconds(nested), 2);
+  assert.equal(isThrottleBlock('{"code":"112"}'), false);
+  assert.equal(extractRetryAfterSeconds('{"code":"10605"}'), 0);
 });
 
 ok("unwrapQoderSSEResponse unwraps {statusCodeValue, body} envelopes", async () => {
@@ -275,6 +303,24 @@ ok("unwrapQoderSSEResponse passes through non-200 responses untouched", async ()
   const upstream = new Response("nope", { status: 401 });
   const wrapped = await unwrapQoderSSEResponse(upstream, "m");
   assert.equal(wrapped.status, 401);
+});
+
+ok("unwrapQoderSSEResponse throws QoderUpstreamStatusError on a non-billing 403 first frame", async () => {
+  const inner = JSON.stringify({
+    code: "403",
+    message: JSON.stringify({ code: "10605", retryAfterSeconds: 2 }),
+  });
+  const upstream = new Response(
+    `data: ${JSON.stringify({ statusCodeValue: 403, body: inner })}\n\n`,
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  );
+  await assert.rejects(
+    () => unwrapQoderSSEResponse(upstream, "qoder/auto"),
+    (err) => err instanceof QoderUpstreamStatusError
+      && err.statusVal === 403
+      && err.isThrottle === true
+      && err.retryAfterSeconds === 2,
+  );
 });
 
 // ── quota usage ─────────────────────────────────────────────────────────────
@@ -335,6 +381,171 @@ ok("getUsage throws without any access token", async () => {
 // ── client wiring (mock fetch) ──────────────────────────────────────────────
 
 currentSection = "client.js";
+
+ok("chat retries upstream 403 envelopes and succeeds", async () => {
+  clearPatJobCache();
+  let chatCalls = 0;
+  const throttleInner = JSON.stringify({
+    code: "403",
+    message: JSON.stringify({ code: "10605", retryAfterSeconds: 1 }),
+  });
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (u.includes("/model/list")) {
+      return new Response(JSON.stringify({ chat: [{ key: "auto", display_name: "Auto" }] }), { status: 200 });
+    }
+    if (u.includes("agent_chat_generation")) {
+      chatCalls++;
+      if (chatCalls < 3) {
+        return new Response(
+          `data: ${JSON.stringify({ statusCodeValue: 403, body: throttleInner })}\n\n`,
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      const frame = `data: ${JSON.stringify({ statusCodeValue: 200, body: JSON.stringify({ choices: [{ delta: { content: "ok" } }] }) })}\n\n`
+        + `data: ${JSON.stringify({ statusCodeValue: 200, body: "[DONE]" })}\n\n`;
+      return new Response(frame, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+  const client = new QoderLiteClient(
+    { accessToken: "dt-retry", providerSpecificData: { userId: "u", machineId: "m" } },
+    { fetchImpl },
+  );
+  const chunks = [];
+  for await (const chunk of client.chatStream(
+    { model: "auto", messages: [{ role: "user", content: "hi" }] },
+    { retryDelayMs: 1 },
+  )) {
+    chunks.push(chunk);
+  }
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0].choices[0].delta.content, "ok");
+  assert.equal(chatCalls, 3, "two 403s then success");
+});
+
+ok("chat retries HTTP-level 403 responses", async () => {
+  clearPatJobCache();
+  let chatCalls = 0;
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (u.includes("/model/list")) {
+      return new Response(JSON.stringify({ chat: [{ key: "auto", display_name: "Auto" }] }), { status: 200 });
+    }
+    if (u.includes("agent_chat_generation")) {
+      chatCalls++;
+      if (chatCalls === 1) return new Response("forbidden", { status: 403 });
+      const frame = `data: ${JSON.stringify({ statusCodeValue: 200, body: JSON.stringify({ choices: [{ delta: { content: "ok" } }] }) })}\n\n`
+        + `data: ${JSON.stringify({ statusCodeValue: 200, body: "[DONE]" })}\n\n`;
+      return new Response(frame, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+  const client = new QoderLiteClient(
+    { accessToken: "dt-http403", providerSpecificData: { userId: "u", machineId: "m" } },
+    { fetchImpl },
+  );
+  const chunks = [];
+  for await (const chunk of client.chatStream(
+    { model: "auto", messages: [{ role: "user", content: "hi" }] },
+    { retryDelayMs: 1 },
+  )) {
+    chunks.push(chunk);
+  }
+  assert.equal(chunks.length, 1);
+  assert.equal(chatCalls, 2);
+});
+
+ok("chat exhausts 403 retries and throws QoderUpstreamStatusError", async () => {
+  clearPatJobCache();
+  let chatCalls = 0;
+  const throttleInner = JSON.stringify({ code: "403", message: JSON.stringify({ code: "10605", retryAfterSeconds: 1 }) });
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (u.includes("/model/list")) {
+      return new Response(JSON.stringify({ chat: [{ key: "auto", display_name: "Auto" }] }), { status: 200 });
+    }
+    if (u.includes("agent_chat_generation")) {
+      chatCalls++;
+      return new Response(
+        `data: ${JSON.stringify({ statusCodeValue: 403, body: throttleInner })}\n\n`,
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+  const client = new QoderLiteClient(
+    { accessToken: "dt-exhaust", providerSpecificData: { userId: "u", machineId: "m" } },
+    { fetchImpl },
+  );
+  await assert.rejects(
+    () => client.chat({ model: "auto", messages: [{ role: "user", content: "hi" }] }, { maxRetries: 1, retryDelayMs: 1 }),
+    (err) => err instanceof QoderUpstreamStatusError && err.statusVal === 403 && err.isThrottle === true,
+  );
+  assert.equal(chatCalls, 2, "initial attempt + 1 retry");
+});
+
+ok("chat aborts during the 403 retry wait when the caller signal aborts", async () => {
+  clearPatJobCache();
+  const throttleInner = JSON.stringify({ code: "10605", retryAfterSeconds: 30 });
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (u.includes("/model/list")) {
+      return new Response(JSON.stringify({ chat: [{ key: "auto", display_name: "Auto" }] }), { status: 200 });
+    }
+    if (u.includes("agent_chat_generation")) {
+      return new Response(
+        `data: ${JSON.stringify({ statusCodeValue: 403, body: throttleInner })}\n\n`,
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+  const client = new QoderLiteClient(
+    { accessToken: "dt-abort", providerSpecificData: { userId: "u", machineId: "m" } },
+    { fetchImpl },
+  );
+  const controller = new AbortController();
+  controller.abort(new Error("client disconnected"));
+  await assert.rejects(
+    () => client.chat(
+      { model: "auto", messages: [{ role: "user", content: "hi" }] },
+      { maxRetries: 3, retryDelayMs: 30_000, signal: controller.signal },
+    ),
+    (err) => /client disconnected/.test(err?.message),
+  );
+});
+
+ok("chat defaults to 10 total attempts on persistent 403s", async () => {
+  clearPatJobCache();
+  let chatCalls = 0;
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (u.includes("/model/list")) {
+      return new Response(JSON.stringify({ chat: [{ key: "auto", display_name: "Auto" }] }), { status: 200 });
+    }
+    if (u.includes("agent_chat_generation")) {
+      chatCalls++;
+      return new Response(
+        `data: ${JSON.stringify({ statusCodeValue: 403, body: '{"code":"403","message":"denied"}' })}\n\n`,
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+  const client = new QoderLiteClient(
+    { accessToken: "dt-default-retries", providerSpecificData: { userId: "u", machineId: "m" } },
+    { fetchImpl },
+  );
+  await assert.rejects(
+    () => client.chat(
+      { model: "auto", messages: [{ role: "user", content: "hi" }] },
+      { retryDelayMs: 1 },
+    ),
+    (err) => err instanceof QoderUpstreamStatusError,
+  );
+  assert.equal(chatCalls, 10, "1 initial attempt + 9 retries by default");
+});
 
 ok("chatComplete aggregates content + tool_call fragments into one completion", async () => {
   const frames = [

@@ -38,10 +38,11 @@ function main() {
   }
 
   // One client instance for the whole process so credential, token, and
-  // model caches stay effective across requests.
+  // model caches stay effective across requests. console is injected so
+  // upstream-403 retries are visible in the service log.
   const client = new QoderLiteClient(
     { apiKey: config.qoderPat, providerSpecificData: {} },
-    {},
+    { log: console },
   );
 
   const server = http.createServer(createRequestHandler({ client, apiKey: config.apiKey }));

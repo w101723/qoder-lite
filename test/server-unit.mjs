@@ -105,6 +105,24 @@ ok("toServiceError maps QoderBillingError to 429 insufficient_quota", () => {
   assert.equal(mapped.errorCode, "insufficient_quota");
 });
 
+ok("toServiceError maps an exhausted 403 throttle to 429 qoder_throttled", () => {
+  const throttle = new Error('qoder upstream returned 403: {"code":"10605","retryAfterSeconds":2}');
+  throttle.name = "QoderUpstreamStatusError";
+  throttle.isThrottle = true;
+  const mapped = toServiceError(throttle);
+  assert.equal(mapped.status, 429);
+  assert.equal(mapped.errorType, "rate_limit_error");
+  assert.equal(mapped.errorCode, "qoder_throttled");
+});
+
+ok("toServiceError maps an exhausted non-throttle 403 to 502", () => {
+  const upstream = new Error('qoder upstream returned 403: {"code":"403","message":"denied"}');
+  upstream.name = "QoderUpstreamStatusError";
+  const mapped = toServiceError(upstream);
+  assert.equal(mapped.status, 502);
+  assert.equal(mapped.errorCode, "qoder_auth_error");
+});
+
 ok("toServiceError maps recognizable auth rejections to 502 qoder_auth_error", () => {
   for (const message of [
     "qoder PAT exchange failed: 401 ",
