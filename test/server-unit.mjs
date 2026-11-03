@@ -35,6 +35,13 @@ ok("config applies documented defaults", () => {
   assert.equal(config.port, 3000);
   assert.equal(config.qoderPat, "pt-abc");
   assert.equal(config.apiKey, "k");
+  assert.equal(config.source, "INTL");
+});
+
+ok("SOURCE=CN switches region; invalid values are rejected", () => {
+  assert.equal(loadServerConfig({ QODER_PAT: "pt-a", API_KEY: "k", SOURCE: "CN" }).source, "CN");
+  assert.equal(loadServerConfig({ QODER_PAT: "pt-a", API_KEY: "k", SOURCE: "cn" }).source, "CN");
+  assert.throws(() => loadServerConfig({ QODER_PAT: "pt-a", API_KEY: "k", SOURCE: "other" }), /SOURCE must/);
 });
 
 ok("config rejects missing QODER_PAT, API_KEY, and bad PORT together", () => {

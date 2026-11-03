@@ -10,14 +10,31 @@
  *   qoder.com/device   - browser landing page for device authorization
  */
 
-export const QODER_OPENAPI_BASE = "https://openapi.qoder.sh";
-export const QODER_CENTER_BASE = "https://center.qoder.sh";
-export const QODER_CHAT_BASE = "https://api3.qoder.sh";
-// Job-token (jt-...) traffic is rejected by api3 with "Login expired" (403);
-// the official qodercli serves it from api2 instead.
-export const QODER_CHAT_BASE_ALT = "https://api2.qoder.sh";
-
-export const QODER_LOGIN_URL = "https://qoder.com/device/selectAccounts";
+// The standalone service uses one Qoder region per process.
+// SOURCE unset / INTL => international; SOURCE=CN => mainland China.
+export const QODER_SOURCE = (process.env.SOURCE || "INTL").trim().toUpperCase() === "CN" ? "CN" : "INTL";
+const REGION_BASES = {
+  INTL: {
+    openapi: "https://openapi.qoder.sh",
+    center: "https://center.qoder.sh",
+    chat: "https://api3.qoder.sh",
+    chatAlt: "https://api2.qoder.sh", // job tokens must use api2
+    login: "https://qoder.com/device/selectAccounts",
+  },
+  CN: {
+    openapi: "https://openapi.qoder.com.cn",
+    center: "https://gateway.qoder.com.cn",
+    chat: "https://gateway.qoder.com.cn",
+    chatAlt: "https://gateway.qoder.com.cn",
+    login: "https://qoder.com.cn/device/selectAccounts",
+  },
+};
+const upstream = REGION_BASES[QODER_SOURCE];
+export const QODER_OPENAPI_BASE = upstream.openapi;
+export const QODER_CENTER_BASE = upstream.center;
+export const QODER_CHAT_BASE = upstream.chat;
+export const QODER_CHAT_BASE_ALT = upstream.chatAlt;
+export const QODER_LOGIN_URL = upstream.login;
 
 // Device flow endpoints
 export const QODER_DEVICE_TOKEN_URL = `${QODER_OPENAPI_BASE}/api/v1/deviceToken/poll`;
@@ -35,6 +52,11 @@ export const QODER_CHAT_SIG_PATH = "/api/v2/service/pro/sse/agent_chat_generatio
 export const QODER_CHAT_URL = `${QODER_CHAT_BASE}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common`;
 export const QODER_CHAT_URL_ENCODED = `${QODER_CHAT_URL}&Encode=1`;
 export const QODER_MODEL_LIST_URL = `${QODER_CHAT_BASE}/algo/api/v2/model/list`;
+// Image upload shares the selected inference host and COSY signing.
+export const QODER_IMAGE_UPLOAD_SIG_PATH = "/api/v2/image/upload";
+export const QODER_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const QODER_INLINE_FALLBACK_MAX_BYTES = 512 * 1024;
+export const QODER_MAX_PAYLOAD_BYTES = 6 * 1024 * 1024;
 
 // COSY header constants. These are not arbitrary — the upstream signature
 // validation matches them against the values used at signing time.

@@ -12,6 +12,7 @@
 import http from "node:http";
 
 import { QoderLiteClient } from "./index.js";
+import { QODER_SOURCE } from "./src/constants.js";
 import { loadServerConfig } from "./src/server/config.js";
 import { createRequestHandler } from "./src/server/app.js";
 
@@ -37,6 +38,10 @@ function main() {
     );
   }
 
+  if (QODER_SOURCE !== config.source) {
+    throw new Error("SOURCE configuration disagrees with loaded Qoder upstream");
+  }
+
   // One client instance for the whole process so credential, token, and
   // model caches stay effective across requests. console is injected so
   // upstream-403 retries are visible in the service log.
@@ -48,7 +53,7 @@ function main() {
   const server = http.createServer(createRequestHandler({ client, apiKey: config.apiKey }));
 
   server.listen(config.port, config.host, () => {
-    console.log(`[qoder-lite] listening on http://${config.host}:${config.port}`);
+    console.log(`[qoder-lite] listening on http://${config.host}:${config.port} (SOURCE=${config.source})`);
     console.log("[qoder-lite] endpoints: /health, /v1/models, /v1/chat/completions, /v1/dashboard/billing/*, /v1/qoder/usage");
   });
 

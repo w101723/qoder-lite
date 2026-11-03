@@ -27,6 +27,9 @@ export function loadServerConfig(env = process.env) {
   const apiKey = String(env.API_KEY ?? "").trim();
   if (!apiKey) problems.push("API_KEY is required");
 
+  const source = String(env.SOURCE ?? "").trim().toUpperCase() || "INTL";
+  if (!["INTL", "CN"].includes(source)) problems.push('SOURCE must be "INTL" or "CN"');
+
   const host = String(env.HOST ?? "").trim() || "0.0.0.0";
 
   const portRaw = String(env.PORT ?? "").trim() || "3000";
@@ -36,5 +39,5 @@ export function loadServerConfig(env = process.env) {
   }
 
   if (problems.length) throw new ConfigError(problems);
-  return { qoderPat, apiKey, host, port };
+  return { qoderPat, apiKey, host, port, source };
 }
