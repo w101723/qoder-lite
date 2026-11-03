@@ -6,7 +6,8 @@ Qoder 的 OpenAI-compatible HTTP 服务。
 
 | 环境变量 | 必填 | 默认值 | 说明 |
 |---|---:|---|---|
-| `QODER_PAT` | 是 | — | Qoder PAT，必须以 `pt-` 开头 |
+| `QODER_PAT` | 是 | — | Qoder PAT，必须以 `pt-` 开头（须与 SOURCE 地区匹配） |
+| `SOURCE` | 否 | `INTL` | 不设置时国际版；设为 `CN` 时中国版 |
 | `API_KEY` | 是 | — | 调用本服务 API 时使用的 Bearer Key |
 | `HOST` | 否 | `0.0.0.0` | 服务监听地址 |
 | `PORT` | 否 | `3000` | 服务监听端口，范围 `1-65535` |
@@ -65,6 +66,18 @@ Authorization: Bearer <API_KEY>
 ```
 
 客户端使用的是服务端配置的 `API_KEY`，不要把 `QODER_PAT` 放入请求头。
+
+## 上游地区和图片输入
+
+默认连接 Qoder 国际版；使用 `SOURCE=CN` 后，PAT 交换、用户信息、额度查询走 `openapi.qoder.com.cn`，模型列表、聊天和 COSY 签名图片上传走 `gateway.qoder.com.cn`。请使用对应地区的 PAT。
+
+支持 OpenAI 格式的 `messages[].content` 图片数组，使用 `image_url` 的 HTTP(S) 地址或 `data:image/png;base64,...` 等 Data URI。支持 PNG、JPEG、GIF、WebP、BMP；支持同一条消息内多图片和混合文本。Base64 图片会先通过 Qoder `PUT /algo/api/v2/image/upload` 上传，再将返回的 OSS URL 发送给模型。单图上限为 10 MiB。上传失败时不超过 512 KiB 的图片保留内联 URI，较大的图片会返回错误（不会静默丢弃）。HTTP(S) 图片地址直接转发而不下载。PDF 等文档输入仍不支持；实际视觉识别取决于所选模型。
+
+示例：
+
+```json
+{"model":"auto","messages":[{"role":"user","content":[{"type":"text","text":"描述这张图片"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo..."}}]}]}
+```
 
 ## 对外 API
 
@@ -144,14 +157,14 @@ Content-Type: application/json
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | `role` | string | 是 | `system`、`user`、`assistant` 或 `tool` |
-| `content` | string | 是 | 消息文本；multipart content 只提取文本部分 |
+| `content` | string / array | 是 | 文本或 OpenAI text + image_url 混合数组 |
 | `tool_calls` | array | 否 | assistant 发起的工具调用 |
 | `tool_call_id` | string | 否 | tool 消息对应的工具调用 ID |
 
 当前未完整支持的参数（传入后可能被忽略）：
 
 - `tool_choice`
-- 图片及其他多模态输入
+- PDF 等非图片附件
 - `temperature`
 - `top_p`
 - `n`

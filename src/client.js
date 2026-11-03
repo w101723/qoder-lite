@@ -121,6 +121,7 @@ export class QoderLiteClient {
         signal: options.signal,
         connectTimeoutMs: options.connectTimeoutMs,
         fetchImpl: this.options.fetchImpl,
+        uploadFn: options.uploadFn || this.options.uploadFn,
         log,
       });
 

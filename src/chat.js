@@ -17,6 +17,7 @@ import crypto from "crypto";
 
 import { qoderEncodeBody } from "./encoding.js";
 import { buildCosyHeaders } from "./cosy.js";
+import { rewriteQoderMessageAttachments } from "./attachments.js";
 import { resolveQoderCredentials, isQoderPat, isQoderJobToken } from "./pat.js";
 import { getQoderModelConfig, resolveQoderModels } from "./models.js";
 import { withConnectTimeout } from "./http.js";
@@ -24,6 +25,7 @@ import {
   QODER_CHAT_URL_ENCODED,
   QODER_CHAT_BASE_ALT,
   QODER_CHAT_SIG_PATH,
+  QODER_MAX_PAYLOAD_BYTES,
 } from "./constants.js";
 
 /**
@@ -57,10 +59,28 @@ export function normalizeMessages(messages) {
       continue;
     }
     const cloned = { ...msg };
-    cloned.content = text;
+    cloned.content = normalizeContent(msg.content);
     out.push(cloned);
   }
   return { messages: out, systemText: systemParts.join("\n\n") };
+}
+
+function normalizeContent(content) {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+  if (!Array.isArray(content)) return String(content);
+  const out = [];
+  let image = false;
+  for (const item of content) {
+    if (item?.type === "image_url") {
+      const url = typeof item.image_url === "string" ? item.image_url : item.image_url?.url;
+      if (!url) throw new Error("qoder: missing image URL");
+      out.push({ type: "image_url", image_url: { url } });
+      image = true;
+    } else if (item?.type === "text" && typeof item.text === "string") out.push({ type: "text", text: item.text });
+    else throw new Error("qoder: unexpected multipart block");
+  }
+  return image ? out : out.map((part) => part.text).join("\n");
 }
 
 function extractText(content) {
@@ -85,9 +105,7 @@ function extractText(content) {
 function lastUserText(messages) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m?.role === "user" && typeof m.content === "string") {
-      return m.content;
-    }
+    if (m?.role === "user") return extractText(m.content);
   }
   return "";
 }
@@ -111,6 +129,8 @@ function stableChatRecordId(model, messages, tools, maxTokens) {
     if (m.role) { h.update("\0"); h.update(m.role); }
     if (typeof m.content === "string" && m.content) {
       h.update("\0"); h.update(m.content);
+    } else if (Array.isArray(m.content)) {
+      h.update("\0"); h.update(JSON.stringify(m.content));
     }
   }
   if (tools) {
@@ -147,7 +167,11 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
     modelConfig = { ...retried, key: qoderKey };
   }
 
-  const { messages, systemText } = normalizeMessages(body.messages || []);
+  const rewritten = await rewriteQoderMessageAttachments(body.messages || [], {
+    credentials, signal: options.signal, fetchImpl: options.fetchImpl,
+    uploadFn: options.uploadFn, log: options.log,
+  });
+  const { messages, systemText } = normalizeMessages(rewritten);
   const tools = body.tools;
   const isReasoning = !!modelConfig.is_reasoning;
   const maxOutputTokens = Number(modelConfig.max_output_tokens) || 0;
@@ -273,7 +297,7 @@ export function extractRetryAfterSeconds(inner) {
  * @param {Function} [params.fetchImpl]      Injectable fetch (defaults to globalThis.fetch).
  * @param {object} [params.log]              Optional { warn } logger.
  */
-export async function sendQoderChatRequest({ model, body, credentials, signal, connectTimeoutMs = 120_000, fetchImpl, log }) {
+export async function sendQoderChatRequest({ model, body, credentials, signal, connectTimeoutMs = 120_000, fetchImpl, uploadFn, log }) {
   const fetch_ = fetchImpl || globalThis.fetch;
 
   // PAT (pt-...) → exchange for short-lived job token + resolve userId so
@@ -298,10 +322,11 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
     model,
     body,
     credentials: resolved,
-    options: { signal, fetchImpl, log },
+    options: { signal, fetchImpl, uploadFn, log },
   });
 
   const plainBody = Buffer.from(JSON.stringify(payload), "utf8");
+  if (plainBody.length > QODER_MAX_PAYLOAD_BYTES) throw new Error("qoder: chat payload exceeds 6 MiB after image upload");
   const encodedBodyStr = qoderEncodeBody(plainBody);
   const encodedBodyBuf = Buffer.from(encodedBodyStr, "latin1");
 
