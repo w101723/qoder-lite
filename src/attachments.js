@@ -1,6 +1,6 @@
 /** OpenAI image_url parts: COSY-signed image upload and message rewriting. */
 import crypto from "node:crypto";
-import { buildCosyHeaders } from "./cosy.js";
+import { buildCosyHeaders, deriveMachineId } from "./cosy.js";
 import { fetchWithTimeout } from "./http.js";
 import { QODER_CHAT_BASE, QODER_CHAT_BASE_ALT, QODER_IMAGE_UPLOAD_SIG_PATH, QODER_MAX_IMAGE_BYTES, QODER_INLINE_FALLBACK_MAX_BYTES } from "./constants.js";
 
@@ -46,7 +46,7 @@ export async function uploadQoderImage({ bytes, mime, credentials, fetchImpl, si
   const header = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="image.${EXT[mime]}"\r\nContent-Type: ${mime}\r\n\r\n`);
   const body = Buffer.concat([header, bytes, Buffer.from(`\r\n--${boundary}--\r\n`)]);
   const headers = {
-    ...buildCosyHeaders(body, url, { userId: psd.userId, authToken: credentials.accessToken, name: credentials.displayName || "", email: credentials.email || "", machineId: psd.machineId || "" }),
+    ...buildCosyHeaders(body, url, { userId: psd.userId, authToken: credentials.accessToken, name: credentials.displayName || "", email: credentials.email || "", machineId: psd.machineId || deriveMachineId(psd.userId) }),
     Accept: "application/json",
     "Content-Type": `multipart/form-data; boundary=${boundary}`,
     "Content-Length": String(body.length),
@@ -54,7 +54,20 @@ export async function uploadQoderImage({ bytes, mime, credentials, fetchImpl, si
     "Accept-Encoding": "identity",
   };
   const response = await fetchWithTimeout(url, { method: "PUT", headers, body, signal }, 30000, fetchImpl);
-  if (!response.ok) throw new Error(`qoder: image upload HTTP ${response.status}`);
+  if (!response.ok) {
+    // A bare "HTTP 403" hides whether CN rejected the token, signed path,
+    // or endpoint policy. Only expose a capped, redacted error summary.
+    const rawDetail = await response.text().catch(() => "");
+    const detail = rawDetail
+      .replace(/(?:pt|jt|dt)-[A-Za-z0-9_.-]+/g, "[REDACTED]")
+      .replace(/Bearer\\s+[^\\s"'<>]+/gi, "Bearer [REDACTED]")
+      .replace(/COSY\\.[^\\s"'<>]+/g, "COSY.[REDACTED]")
+      .replace(/\\s+/g, " ")
+      .slice(0, 300);
+    const error = new Error(`qoder: image upload HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+    error.status = response.status;
+    throw error;
+  }
   const uploaded = uploadedImageUrl(await response.json().catch(() => null));
   if (!uploaded || !isHttp(uploaded)) throw new Error("qoder: image upload response did not include an HTTP image URL");
   return uploaded;
@@ -72,6 +85,7 @@ async function rewriteImage(raw, ctx, uploads) {
   catch (err) {
     if (data.bytes.length <= QODER_INLINE_FALLBACK_MAX_BYTES) {
       ctx.log?.warn?.(`[qoder-lite] image upload failed; falling back to inline URI: ${err.message}`);
+      uploads.set(digest, raw); // A failed inline fallback must not re-upload identical images.
       return { type: "image_url", image_url: { url: raw } };
     }
     throw new Error(`qoder: image upload failed; image not sent: ${err.message}`);

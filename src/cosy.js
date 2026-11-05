@@ -102,6 +102,22 @@ export function generateMachineId() {
 }
 
 /**
+ * PAT connections do not persist a machine ID. Use a stable one derived from
+ * Qoder userId, as qodercli / 9router do, for signing, uploads and queues.
+ */
+export function deriveMachineId(seed) {
+  if (!seed) return generateMachineId();
+  const h = crypto.createHash("sha256").update(`qoder-machine\0${seed}`).digest("hex");
+  return [
+    h.slice(0, 8),
+    h.slice(8, 12),
+    `5${h.slice(13, 16)}`,
+    `a${h.slice(17, 20)}`,
+    h.slice(20, 32),
+  ].join("-");
+}
+
+/**
  * Build the full Cosy-* header set for a single Qoder request.
  *
  * @param {Buffer|Uint8Array|string} body  The exact bytes that will be sent.

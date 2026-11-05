@@ -16,7 +16,7 @@
 import crypto from "crypto";
 
 import { qoderEncodeBody } from "./encoding.js";
-import { buildCosyHeaders } from "./cosy.js";
+import { buildCosyHeaders, deriveMachineId } from "./cosy.js";
 import { rewriteQoderMessageAttachments } from "./attachments.js";
 import { resolveQoderCredentials, isQoderPat, isQoderJobToken } from "./pat.js";
 import { getQoderModelConfig, resolveQoderModels } from "./models.js";
@@ -297,7 +297,7 @@ export function extractRetryAfterSeconds(inner) {
  * @param {Function} [params.fetchImpl]      Injectable fetch (defaults to globalThis.fetch).
  * @param {object} [params.log]              Optional { warn } logger.
  */
-export async function sendQoderChatRequest({ model, body, credentials, signal, connectTimeoutMs = 120_000, fetchImpl, uploadFn, log }) {
+export async function sendQoderChatRequest({ model, body, credentials, signal, connectTimeoutMs = 120_000, fetchImpl, uploadFn, log, prepared = null }) {
   const fetch_ = fetchImpl || globalThis.fetch;
 
   // PAT (pt-...) → exchange for short-lived job token + resolve userId so
@@ -318,12 +318,26 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
     throw new Error("qoder credential is missing accessToken; reconnect the account");
   }
 
-  const { qoderKey, payload } = await buildQoderRequestBody({
-    model,
-    body,
-    credentials: resolved,
-    options: { signal, fetchImpl, uploadFn, log },
-  });
+  // Build once per client.chat() call. A queued request may be replayed many
+  // times; repeating model lookup and image uploads on every 10605 is wasteful
+  // and can trip an independent 403 on the image endpoint.
+  let built;
+  if (prepared?.accessToken === resolved.accessToken && prepared?.model === model) {
+    built = prepared.built;
+  } else {
+    built = await buildQoderRequestBody({
+      model,
+      body,
+      credentials: resolved,
+      options: { signal, fetchImpl, uploadFn, log },
+    });
+    if (prepared) {
+      prepared.accessToken = resolved.accessToken;
+      prepared.model = model;
+      prepared.built = built;
+    }
+  }
+  const { qoderKey, payload } = built;
 
   const plainBody = Buffer.from(JSON.stringify(payload), "utf8");
   if (plainBody.length > QODER_MAX_PAYLOAD_BYTES) throw new Error("qoder: chat payload exceeds 6 MiB after image upload");
@@ -336,7 +350,7 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
     authToken: resolved.accessToken,
     name: resolved.displayName || "",
     email: resolved.email || "",
-    machineId: psd.machineId || "",
+    machineId: psd.machineId || deriveMachineId(psd.userId),
   });
 
   const headers = {

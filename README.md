@@ -79,6 +79,19 @@ Authorization: Bearer <API_KEY>
 {"model":"auto","messages":[{"role":"user","content":[{"type":"text","text":"描述这张图片"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo..."}}]}]}
 ```
 
+## CN 上传 403 与模型队列
+
+`SOURCE=CN` 使用 `gateway.qoder.com.cn` 的签名图片上传接口。如果该接口返回
+HTTP 403，日志现在会包含截断、脱敏后的上游错误正文，方便判断是签名错误、Job Token
+权限不足，还是接口地区策略限制。当前代码不会绕过上游权限限制；上传失败时小图仍
+回退为内联 Data URI，大图仍会报错。请注意：能成功请求聊天接口，不代表图片上传
+接口一定向同一个 Job Token 开放。
+
+当聊天上游返回 `10605 / CALL_COUNT_LIMIT`，客户端会遵守
+`retryAfterSeconds`（通常为 30 秒）而不是提前在 15 秒时重试。
+同一请求的重试复用已经准备好的图片和模型配置、保持原业务请求 ID，
+但每次均重新生成 COSY 签名；PAT 使用稳定的机器 ID。
+
 ## 对外 API
 
 | 方法 | 路径 | 鉴权 | 说明 |

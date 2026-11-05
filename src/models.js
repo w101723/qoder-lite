@@ -16,7 +16,7 @@
 
 import { createHash } from "crypto";
 
-import { buildCosyHeaders } from "./cosy.js";
+import { buildCosyHeaders, deriveMachineId } from "./cosy.js";
 import { resolveQoderCredentials, isQoderPat, peekCachedPatUserId } from "./pat.js";
 import { fetchWithTimeout } from "./http.js";
 import {
@@ -68,7 +68,7 @@ function cosyCredsFromConnection(credentials) {
     authToken: credentials.accessToken,
     name: credentials.displayName || "",
     email: credentials.email || "",
-    machineId: psd.machineId || "",
+    machineId: psd.machineId || deriveMachineId(psd.userId),
   };
 }
 

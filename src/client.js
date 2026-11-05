@@ -22,10 +22,14 @@ import {
 } from "./chat.js";
 import { resolveAndFetchUsage } from "./usage.js";
 
-/** Retry backoff: upstream hint (retryAfterSeconds) when present, else ~1s/attempt. */
-function computeRetryDelayMs(error, attempt, overrideMs) {
+/**
+ * The 10605 queue refusal is not an ordinary HTTP 403. Its 30s hint must
+ * be respected; the old 15s cap replayed before the queue was ready.
+ */
+export function computeRetryDelayMs(error, attempt, overrideMs) {
   if (Number.isFinite(overrideMs) && overrideMs >= 0) return overrideMs;
   const hintedMs = (error?.retryAfterSeconds || 0) * 1000;
+  if (error?.isThrottle) return Math.max(15_000, Math.min(hintedMs || 30_000, 60_000));
   return Math.min(hintedMs || attempt * 1000, 15_000);
 }
 
@@ -104,6 +108,9 @@ export class QoderLiteClient {
       : 9;
     const log = this.options.log;
     let lastError = null;
+    // Shared across retries of this one user request, never across sessions.
+    // Signatures are still regenerated on every attempt in sendQoderChatRequest.
+    const prepared = {};
 
     for (let attempt = 0; ; attempt++) {
       if (attempt > 0) {
@@ -122,6 +129,7 @@ export class QoderLiteClient {
         connectTimeoutMs: options.connectTimeoutMs,
         fetchImpl: this.options.fetchImpl,
         uploadFn: options.uploadFn || this.options.uploadFn,
+        prepared,
         log,
       });
 
