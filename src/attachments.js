@@ -1,6 +1,6 @@
 /** OpenAI image_url parts: COSY-signed image upload and message rewriting. */
 import crypto from "node:crypto";
-import { buildCosyHeaders, deriveMachineId } from "./cosy.js";
+import { buildCosyHeaders } from "./cosy.js";
 import { fetchWithTimeout } from "./http.js";
 import { QODER_CHAT_BASE, QODER_CHAT_BASE_ALT, QODER_IMAGE_UPLOAD_SIG_PATH, QODER_MAX_IMAGE_BYTES, QODER_INLINE_FALLBACK_MAX_BYTES } from "./constants.js";
 
@@ -46,7 +46,7 @@ export async function uploadQoderImage({ bytes, mime, credentials, fetchImpl, si
   const header = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="image.${EXT[mime]}"\r\nContent-Type: ${mime}\r\n\r\n`);
   const body = Buffer.concat([header, bytes, Buffer.from(`\r\n--${boundary}--\r\n`)]);
   const headers = {
-    ...buildCosyHeaders(body, url, { userId: psd.userId, authToken: credentials.accessToken, name: credentials.displayName || "", email: credentials.email || "", machineId: psd.machineId || deriveMachineId(psd.userId) }),
+    ...buildCosyHeaders(body, url, { userId: psd.userId, authToken: credentials.accessToken, name: credentials.displayName || "", email: credentials.email || "", machineId: psd.machineId || "" }),
     Accept: "application/json",
     "Content-Type": `multipart/form-data; boundary=${boundary}`,
     "Content-Length": String(body.length),
