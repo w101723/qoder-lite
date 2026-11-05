@@ -47,6 +47,13 @@ curl http://127.0.0.1:3000/health
 docker logs -f qoder-lite
 ```
 
+每条服务日志带有 ISO 8601 UTC 时间戳（末尾 `Z`），包括启动、图片上传错误、上游重试及请求异常。例如：
+
+```text
+[2026-11-05T11:12:30.123Z] [qoder-lite] image upload failed; falling back to inline URI: qoder: image upload HTTP 403
+```
+
+
 停止并删除容器：
 
 ```bash
