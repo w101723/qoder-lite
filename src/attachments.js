@@ -60,9 +60,9 @@ export async function uploadQoderImage({ bytes, mime, credentials, fetchImpl, si
     const rawDetail = await response.text().catch(() => "");
     const detail = rawDetail
       .replace(/(?:pt|jt|dt)-[A-Za-z0-9_.-]+/g, "[REDACTED]")
-      .replace(/Bearer\\s+[^\\s"'<>]+/gi, "Bearer [REDACTED]")
-      .replace(/COSY\\.[^\\s"'<>]+/g, "COSY.[REDACTED]")
-      .replace(/\\s+/g, " ")
+      .replace(/Bearer\s+[^\s"'<>]+/gi, "Bearer [REDACTED]")
+      .replace(/COSY\.[^\s"'<>]+/g, "COSY.[REDACTED]")
+      .replace(/\s+/g, " ")
       .slice(0, 300);
     const error = new Error(`qoder: image upload HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
     error.status = response.status;
