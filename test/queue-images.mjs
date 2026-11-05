@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { QoderLiteClient, computeRetryDelayMs } from "../src/client.js";
 import { deriveMachineId } from "../src/cosy.js";
@@ -94,3 +95,22 @@ assert.deepEqual(machines, Array(machines.length).fill(expectedMachine));
 assert.deepEqual(bodies[0], bodies[1], "retry must reuse the same Qoder business request body");
 assert.notEqual(signatures[0], signatures[1], "each retry must be COSY-signed afresh");
 console.log("✓ 10605 retry reuses image payload, keeps request ID, signs afresh");
+
+// CN must use its own gateway for PAT job-token image uploads as well.
+const cnProbe = [
+  'import { uploadQoderImage } from "./src/attachments.js";',
+  'await uploadQoderImage({ bytes: Buffer.from("PNG"), mime: "image/png",',
+  '  credentials: { accessToken: "jt-cn", providerSpecificData: { userId: "u-cn" } },',
+  '  fetchImpl: async (url, init) => {',
+  '    if (new URL(url).hostname !== "gateway.qoder.com.cn") throw Error("wrong CN image host");',
+  '    if (init.method !== "PUT" || init.headers["Cosy-Sigpath"] !== "/api/v2/image/upload") throw Error("wrong signed upload request");',
+  '    return new Response(JSON.stringify({ imageUrl: "https://oss.example/cn.png" }), { status: 200 });',
+  '  } });',
+  'console.log("CN_UPLOAD_OK");',
+].join("\n");
+const cnChild = spawnSync(process.execPath, ["--input-type=module", "-e", cnProbe], {
+  cwd: process.cwd(), env: { ...process.env, SOURCE: "CN" }, encoding: "utf8",
+});
+assert.equal(cnChild.status, 0, cnChild.stderr);
+assert.match(cnChild.stdout, /CN_UPLOAD_OK/);
+console.log("✓ CN image PUT reaches gateway.qoder.com.cn with COSY signature");
