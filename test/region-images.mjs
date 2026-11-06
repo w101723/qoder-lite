@@ -46,9 +46,9 @@ const fetchImpl = async (url, init) => {
   const signatureBody = Buffer.from(String(init.body.length));
   assert.equal(init.headers["Cosy-Bodylength"], String(signatureBody.length));
   assert.equal(init.headers["Cosy-Bodyhash"], crypto.createHash("md5").update(signatureBody).digest("hex"));
-  const match = /^Bearer COSY\\.([^.]*)\\.([0-9a-f]{32})$/.exec(init.headers.Authorization);
+  const match = /^Bearer COSY\.([^.]*)\.([0-9a-f]{32})$/.exec(init.headers.Authorization);
   assert.ok(match, "COSY Authorization must have a payload and MD5 signature");
-  const sigInput = [match[1], init.headers["Cosy-Key"], init.headers["Cosy-Date"], String(init.body.length), "/api/v2/image/upload"].join("\\n");
+  const sigInput = [match[1], init.headers["Cosy-Key"], init.headers["Cosy-Date"], String(init.body.length), "/api/v2/image/upload"].join("\n");
   const expectedSig = crypto.createHash("md5").update(Buffer.from(sigInput, "latin1")).digest("hex");
   assert.equal(match[2], expectedSig, "signed payload must be the decimal multipart byte count");
   const requestId = new URL(url).searchParams.get("request_id");
