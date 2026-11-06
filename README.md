@@ -94,6 +94,13 @@ HTTP 403，日志会包含截断、脱敏后的上游错误正文，方便判断
 回退为内联 Data URI，大图仍会报错。请注意：能成功请求聊天接口，不代表图片上传
 接口一定向同一个 Job Token 开放。
 
+图片上传的 COSY 签名遵循 Qoder 客户端的特殊规则：**签名时使用 Multipart
+请求体字节长度的十进制字符串**，真正发送的 HTTP Body 仍然是完整的二进制
+Multipart 数据；`Cosy-Bodyhash` 和 `Cosy-Bodylength` 以签名输入字符串
+计算，而 HTTP `Content-Length` 为实际上传字节数。请求 ID 使用无连字符
+UUID，boundary 使用 `----qodercli-<UUID>` 格式。此规则**仅作用于图片上传**，
+不会改变聊天端点的签名和 `10605` 重试逻辑。
+
 ## 对外 API
 
 | 方法 | 路径 | 鉴权 | 说明 |

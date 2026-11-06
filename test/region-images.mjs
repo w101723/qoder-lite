@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { rewriteQoderMessageAttachments } from "../src/attachments.js";
 import { normalizeMessages } from "../src/chat.js";
@@ -40,7 +41,20 @@ const fetchImpl = async (url, init) => {
   assert.equal(init.method, "PUT");
   assert.ok(init.headers.Authorization.startsWith("Bearer COSY."));
   assert.equal(init.headers["Cosy-Sigpath"], "/api/v2/image/upload");
-  assert.equal(init.headers["Cosy-Bodylength"], String(init.body.length));
+  // Unlike chat, the official Qoder image uploader signs the *decimal body
+  // length string*, while transmitting actual multipart bytes.
+  const signatureBody = Buffer.from(String(init.body.length));
+  assert.equal(init.headers["Cosy-Bodylength"], String(signatureBody.length));
+  assert.equal(init.headers["Cosy-Bodyhash"], crypto.createHash("md5").update(signatureBody).digest("hex"));
+  const match = /^Bearer COSY\\.([^.]*)\\.([0-9a-f]{32})$/.exec(init.headers.Authorization);
+  assert.ok(match, "COSY Authorization must have a payload and MD5 signature");
+  const sigInput = [match[1], init.headers["Cosy-Key"], init.headers["Cosy-Date"], String(init.body.length), "/api/v2/image/upload"].join("\\n");
+  const expectedSig = crypto.createHash("md5").update(Buffer.from(sigInput, "latin1")).digest("hex");
+  assert.equal(match[2], expectedSig, "signed payload must be the decimal multipart byte count");
+  const requestId = new URL(url).searchParams.get("request_id");
+  assert.match(requestId, /^[a-f0-9]{32}$/, "request_id is a hyphen-free UUID");
+  const boundary = init.headers["Content-Type"].split("boundary=")[1];
+  assert.match(boundary, /^----qodercli-[a-f0-9]{32}$/, "use native qodercli multipart boundary");
   assert.ok(init.body.includes(bytes));
   return new Response(JSON.stringify({result:{imageUrls:["https://oss.example/image.png"]}}),{status:200});
 };

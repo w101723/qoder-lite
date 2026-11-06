@@ -47,6 +47,8 @@ const cnProbe = [
   '  fetchImpl: async (url, init) => {',
   '    if (new URL(url).hostname !== "gateway.qoder.com.cn") throw Error("wrong CN host");',
   '    if (init.method !== "PUT" || init.headers["Cosy-Sigpath"] !== "/api/v2/image/upload") throw Error("wrong signed upload");',
+  '    if (init.headers["Cosy-Bodylength"] !== String(String(init.body.length).length)) throw Error("wrong COSY signature body length");',
+  '    if (init.headers["Content-Length"] !== String(init.body.length)) throw Error("wrong HTTP multipart length");',
   '    return new Response(JSON.stringify({ imageUrl: "https://oss.example/cn.png" }), { status: 200 });',
   '  } });',
   'console.log("CN_UPLOAD_OK");',

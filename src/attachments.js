@@ -41,12 +41,21 @@ export async function uploadQoderImage({ bytes, mime, credentials, fetchImpl, si
   const psd = credentials.providerSpecificData || {};
   if (!psd.userId || !credentials.accessToken) throw new Error("qoder: missing upload credentials");
   const host = credentials.accessToken.startsWith("jt-") ? QODER_CHAT_BASE_ALT : QODER_CHAT_BASE;
-  const url = `${host}/algo${QODER_IMAGE_UPLOAD_SIG_PATH}?request_id=${crypto.randomUUID()}`;
-  const boundary = `----qoderLite${crypto.randomUUID().replace(/-/g, "")}`;
+  // The native qodercli uses 32-character UUIDs and a qodercli-prefixed
+  // multipart boundary. Keep the transmitted bytes aligned with that format.
+  const bareUuid = () => crypto.randomUUID().replace(/-/g, "");
+  const url = `${host}/algo${QODER_IMAGE_UPLOAD_SIG_PATH}?request_id=${bareUuid()}`;
+  const boundary = `----qodercli-${bareUuid()}`;
   const header = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="image.${EXT[mime]}"\r\nContent-Type: ${mime}\r\n\r\n`);
   const body = Buffer.concat([header, bytes, Buffer.from(`\r\n--${boundary}--\r\n`)]);
+  // Qoder's native image-upload worker signs String(multipartBody.length),
+  // NOT the binary multipart body. These are deliberately different:
+  //   COSY auth/bodyhash/bodylength => decimal length STRING
+  //   HTTP request body/Content-Length => actual multipart BYTES
+  // This is upload-specific; chat and model-list signatures stay unchanged.
+  const signatureBody = Buffer.from(String(body.length), "utf8");
   const headers = {
-    ...buildCosyHeaders(body, url, { userId: psd.userId, authToken: credentials.accessToken, name: credentials.displayName || "", email: credentials.email || "", machineId: psd.machineId || "" }),
+    ...buildCosyHeaders(signatureBody, url, { userId: psd.userId, authToken: credentials.accessToken, name: credentials.displayName || "", email: credentials.email || "", machineId: psd.machineId || "" }),
     Accept: "application/json",
     "Content-Type": `multipart/form-data; boundary=${boundary}`,
     "Content-Length": String(body.length),
