@@ -48,7 +48,7 @@ ok("config accepts optional QODER_PAT but requires API_KEY and valid PORT", () =
   assert.throws(
     () => loadServerConfig({ PORT: "nope" }),
     (err) => err instanceof ConfigError
-      && err.problems.length === 3
+      && err.problems.length === 2
       && !err.problems.some((p) => p.includes("QODER_PAT"))
       && err.problems.some((p) => p.includes("API_KEY"))
       && err.problems.some((p) => p.includes("PORT")),

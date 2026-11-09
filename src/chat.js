@@ -204,49 +204,29 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
       request_set_id: task.id,
       chat_record_id: requestId,
       session_id: sessionId,
-      stream: true,
-      chat_task: "FREE_INPUT",
-      is_reply: true,
-      is_retry: false,
-      source: 1,
-      version: "3",
-      session_type: "app",
       agent_id: "agent_common",
       task_id: "common",
-      code_language: "",
-      chat_prompt: "",
-      image_urls: null,
-      aliyun_user_type: "",
+      session_type: "app",
+      parameters: { max_tokens: maxTokens, ...modelParams },
+      model_config: nativeConfig,
       system: [sys],
       messages: [{ role: "system", content: [sys] }, ...messages.map((m,i,all) => {
-        if (m.role !== "user" || !Array.isArray(m.content)) return m;
-        const content = m.content.map((block,idx) => {
-          if (i === all.length - 1 && idx === m.content.length - 1) return { ...block, cache_control: { type: "ephemeral" } };
-          return block;
-        });
-        return { ...m, content, contents: content };
+        // Native desktop wire format uses text/image blocks.
+        const content = typeof m.content === "string" ? [{ type:"text", text:m.content }] : m.content;
+        if (m.role !== "user") return { ...m, content };
+        const last = i === all.length - 1 && Array.isArray(content) && content.length > 0;
+        const blocks = !last ? content : content.map((b,j) => j === content.length-1 ? { ...b, cache_control: {type:"ephemeral"} } : b);
+        return { ...m, content: blocks, contents: blocks };
       })],
-      tools: Array.isArray(tools) ? tools : [],
-      parameters: { max_tokens: maxTokens, ...modelParams },
-      chat_context: {
-        chatPrompt: "",
-        imageUrls: null,
-        extra: {
-          context: [],
-          modelConfig: { key: qoderKey, is_reasoning: isReasoning },
-          originalContent: lastUser,
-        },
-        features: [],
-        text: lastUser,
-      },
-      model_config: nativeConfig,
+      tools: body.tool_choice === "none" ? [] : Array.isArray(tools) ? tools : [],
       business: {
         product: "app",
         version: "1.1.69",
         type: "agent",
         stage: task.answered ? "processing" : "start",
         id: task.id,
-        name: truncate(lastUser, 30),
+        model_key: qoderKey,
+        name: truncate(lastUser, 10),
         begin_at: task.begin,
       },
     },
@@ -430,7 +410,7 @@ export async function unwrapQoderSSEResponse(response, model, tools = []) {
     if (!choice || (!tools?.length && !final)) return [raw];
     const output = [];
     const delta = choice.delta || {};
-    const pieces = parser.feed(typeof delta.content === "string" ? delta.content : "", final);
+    const pieces = parser.feed(typeof delta.content === "string" ? delta.content : "", final || !!choice.finish_reason);
     for (const item of pieces) {
       if (item.kind === "text") output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: { ...delta, content: item.text }, finish_reason: null }] }));
       else output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: { role: "assistant", tool_calls: [parser.newCall(item, toolIndex++)] }, finish_reason: null }] }));
@@ -450,6 +430,12 @@ export async function unwrapQoderSSEResponse(response, model, tools = []) {
 
     const data = trimmed.slice(5).trimStart();
     if (data === "[DONE]") {
+      if (tools?.length) {
+        try { for (const item of parser.feed("", true)) {
+          const delta = item.kind === "text" ? {content:item.text} : {tool_calls:[parser.newCall(item,toolIndex++)]};
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({object:"chat.completion.chunk",model,choices:[{index:0,delta,finish_reason:null}]})}\n\n`));
+        } } catch (e) { controller.enqueue(encoder.encode(`data: ${JSON.stringify({error:{message:e.message,code:e.code||"tool_parse_error"}})}\n\n`)); }
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       doneEmitted = true;
       return;

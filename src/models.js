@@ -104,11 +104,18 @@ export async function fetchQoderCatalogRaw(credentials, options = {}) {
   if (!response.ok) return null;
 
   const body = await response.json().catch(() => null);
-  if (!body || !Array.isArray(body.chat)) return null;
+  if (!body || (!Array.isArray(body.chat) && !Array.isArray(body.app))) return null;
 
   const models = [];
   const rawConfigs = new Map();
-  for (const entry of body.chat) {
+  const entries = Array.isArray(body.app) && body.app.length ? [...body.app] : [];
+  let after = -1;
+  for (const item of body.chat || []) {
+    const found = entries.findIndex((m) => m?.key === item?.key);
+    if (found >= 0) after = found;
+    else entries.splice(++after, 0, item);
+  }
+  for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
     const key = entry.key;
     if (!key) continue;
@@ -117,9 +124,12 @@ export async function fetchQoderCatalogRaw(credentials, options = {}) {
     // models (enable:false). Upstream still accepts chat for these keys.
     rawConfigs.set(key, entry);
     if (entry.enable === false) continue;
+    if (["default"].includes(key)) continue;
 
     const display = entry.display_name || key;
-    const ctx = Number(entry.max_input_tokens) || 131_072;
+    const windows = entry.context_config?.windows || entry.context_config?.options || [];
+    const windowsMax = (Array.isArray(windows) ? windows : []).map((v)=>Number(v?.tokens ?? v?.length ?? v)).filter((v)=>Number.isFinite(v)&&v>0);
+    const ctx = Math.max(Number(entry.max_input_tokens)||0, ...windowsMax, 131_072);
     models.push({
       id: key,
       name: `${display}`,

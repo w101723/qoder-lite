@@ -109,6 +109,7 @@ export class QoderLiteClient {
       : 9;
     const log = this.options.log;
     let lastError = null;
+    let renewedAfterAuthError = false;
 
     for (let attempt = 0; ; attempt++) {
       if (attempt > 0) {
@@ -145,6 +146,15 @@ export class QoderLiteClient {
         }
       }
 
+      // A rejected job token is not a queue throttle. Renew once under the
+      // credential manager lock, without changing 10605/CALL_COUNT_LIMIT retries.
+      if (!renewedAfterAuthError && this.credentialManager && !upstreamError.isThrottle &&
+          /login expired|(?:"code"|code)\s*:\s*"?105"?/i.test(upstreamError.message)) {
+        renewedAfterAuthError = true;
+        await this.credentialManager.resolve({ forceRefresh: true });
+        attempt--;
+        continue;
+      }
       const retryable = upstreamError.statusVal === 403 || upstreamError.isThrottle;
       if (!retryable || attempt >= maxRetries) throw upstreamError;
       lastError = upstreamError;
