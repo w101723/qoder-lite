@@ -1,0 +1,20 @@
+name: Tag pre-refactor baseline v20261109
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tag-v20261109.yml']
+permissions:
+  contents: write
+jobs:
+  tag-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create tag on original baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/${{ github.repository }}/git/refs -f ref=refs/tags/v20261109 -f sha=4690fd13ed1f4bbc2afd7a85c98390a99cd6ea5c || {
+            target=$(gh api repos/${{ github.repository }}/git/ref/tags/v20261109 --jq '.object.sha')
+            test "$target" = "4690fd13ed1f4bbc2afd7a85c98390a99cd6ea5c"
+          }
