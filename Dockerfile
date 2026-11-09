@@ -15,6 +15,11 @@ WORKDIR /app
 COPY --chown=node:node package.json index.js server.js ./
 COPY --chown=node:node src ./src
 
+# Ensure Docker named volumes inherit writable permissions for UID 1000.
+RUN mkdir -p /home/node/.qoder-lite \
+    && chown node:node /home/node/.qoder-lite \
+    && chmod 700 /home/node/.qoder-lite
+
 USER node
 
 EXPOSE 3000

@@ -1,0 +1,26 @@
+# Qoder Lite - OpenAI-compatible API
+# Copy .env.example to .env, then set API_KEY before starting.
+services:
+  qoder-lite:
+    image: ghcr.io/w101723/qoder-lite:latest
+    container_name: qoder-lite
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${QODER_BIND:-127.0.0.1}:${QODER_PORT:-3000}:3000"
+    environment:
+      API_KEY: "${API_KEY:?Set API_KEY in .env (e.g. openssl rand -hex 32)}"
+      # Leave blank to log in using the device URL printed in the logs.
+      QODER_PAT: "${QODER_PAT:-}"
+      SOURCE: "${SOURCE:-INTL}"
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      QODER_OPEN_BROWSER: "0"
+      QODER_AUTH_FILE: "/home/node/.qoder-lite/auth.json"
+    volumes:
+      # Persists refresh tokens and a stable Machine ID across restarts.
+      - qoder_auth:/home/node/.qoder-lite
+    stop_grace_period: 15s
+
+volumes:
+  qoder_auth:

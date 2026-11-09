@@ -40,6 +40,11 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Validate Compose configuration
+        env:
+          API_KEY: "compose-ci-placeholder-not-a-real-credential"
+        run: docker compose -f docker-compose.yaml config --quiet
+
   docker:
     name: Build linux/amd64 and linux/arm64
     needs: test

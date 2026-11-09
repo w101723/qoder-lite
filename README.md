@@ -2,6 +2,29 @@
 
 Qoder 的 OpenAI-compatible HTTP 服务。
 
+## Docker Compose 部署
+
+仓库提供 [`docker-compose.yaml`](docker-compose.yaml)，使用 GHCR 镜像，兼容 `linux/amd64` 和 `linux/arm64`，无需额外构建。
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入 API_KEY；可用 openssl rand -hex 32 生成
+docker compose up -d
+docker compose logs -f qoder-lite
+```
+
+**认证方式：** `.env` 中填写 `QODER_PAT=pt-...` 会自动使用 PAT；不填写 PAT 则会在容器日志中打印 Qoder 设备登录 URL，复制到本机浏览器授权即可。容器不尝试打开图形浏览器。
+
+**凭证持久化：** 命名卷 `qoder_auth` 保存 `/home/node/.qoder-lite/auth.json`，其中包含 Refresh Token、Machine ID 等敏感信息，重启/重建容器不会丢失。请勿执行 `docker compose down -v`，否则会删除登录凭证。镜像以 UID 1000（node）运行，Dockerfile 已创建可写入的凭证目录。
+
+默认仅监听宿主机 `127.0.0.1:3000`；API Base URL 为 `http://127.0.0.1:3000/v1`。如需通过其他机器访问，建议使用反向代理和 TLS，而非直接暴露端口。
+
+```bash
+docker compose ps
+docker compose pull && docker compose up -d   # 手动更新
+docker compose down                           # 保留凭证卷
+```
+
 ## 启动参数
 
 | 环境变量 | 必填 | 默认值 | 说明 |
