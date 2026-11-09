@@ -105,7 +105,7 @@ ok("resolveQoderCredentials exchanges a PAT via the job-token endpoint", async (
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), init });
     if (String(url).includes("jobToken/exchange")) {
-      return new Response(JSON.stringify({ token: "jt-job1", expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ token: "jt-job1", expires_in: 3_600_000 }), { status: 200 });
     }
     if (String(url).includes("userinfo")) {
       return new Response(JSON.stringify({ id: "user-42" }), { status: 200 });
@@ -645,7 +645,7 @@ ok("QoderLiteClient end-to-end (PAT): models + chatStream against a mock upstrea
 
 currentSection = "reliability fixes";
 
-ok("PAT exchange interprets expires_in as seconds (cache stays warm)", async () => {
+ok("PAT exchange interprets expires_in as milliseconds (cache stays warm)", async () => {
   clearPatJobCache();
   let exchangeCalls = 0;
   const fetchImpl = async (url) => {
@@ -657,8 +657,7 @@ ok("PAT exchange interprets expires_in as seconds (cache stays warm)", async () 
   };
   await resolveQoderCredentials({ apiKey: "pt-ttl" }, { fetchImpl });
   await resolveQoderCredentials({ apiKey: "pt-ttl" }, { fetchImpl });
-  // expires_in: 3600 means one hour — the second resolve must hit the cache,
-  // not fall into the 5-minute refresh window after only 3.6 seconds.
+  // Qoder Job Token expires_in is milliseconds: 3,600,000 means one hour.
   assert.equal(exchangeCalls, 1);
 });
 
