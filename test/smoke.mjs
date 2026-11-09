@@ -651,7 +651,7 @@ ok("PAT exchange interprets expires_in as milliseconds (cache stays warm)", asyn
   const fetchImpl = async (url) => {
     if (String(url).includes("jobToken/exchange")) {
       exchangeCalls++;
-      return new Response(JSON.stringify({ token: "jt-ttl", expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ token: "jt-ttl", expires_in: 3_600_000 }), { status: 200 });
     }
     return new Response(JSON.stringify({ id: "u-ttl" }), { status: 200 });
   };
