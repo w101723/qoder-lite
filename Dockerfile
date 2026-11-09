@@ -10,7 +10,7 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-# Copy only runtime files. QODER_PAT and API_KEY must be injected when the
+# Copy only runtime files. QODER_PAT is optional; API_KEY must be injected when the
 # container starts — never pass secrets as build arguments or bake them in.
 COPY --chown=node:node package.json index.js server.js ./
 COPY --chown=node:node src ./src

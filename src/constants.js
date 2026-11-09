@@ -46,6 +46,7 @@ export const QODER_REFRESH_TOKEN_URL = `${QODER_CENTER_BASE}/algo/api/v3/user/re
 // PATs cannot sign COSY requests directly — they must be exchanged first.
 // This endpoint is NOT COSY-signed (plain JSON POST).
 export const QODER_JOB_TOKEN_EXCHANGE_URL = `${QODER_OPENAPI_BASE}/api/v1/jobToken/exchange`;
+export const QODER_JOB_TOKEN_REFRESH_URL = `${QODER_OPENAPI_BASE}/api/v1/jobToken/refresh`;
 
 // Inference endpoints (under /algo on api3.qoder.sh, all COSY-signed)
 export const QODER_CHAT_SIG_PATH = "/api/v2/service/pro/sse/agent_chat_generation";

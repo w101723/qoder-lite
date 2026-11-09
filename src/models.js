@@ -127,8 +127,8 @@ export async function fetchQoderCatalogRaw(credentials, options = {}) {
     if (["default"].includes(key)) continue;
 
     const display = entry.display_name || key;
-    const windows = entry.context_config?.windows || entry.context_config?.options || [];
-    const windowsMax = (Array.isArray(windows) ? windows : []).map((v)=>Number(v?.tokens ?? v?.length ?? v)).filter((v)=>Number.isFinite(v)&&v>0);
+    const context = entry.context_config || entry.contextConfig || {};
+    const windowsMax = Object.values(context).map((v)=>Number(v?.token_count)).filter((v)=>Number.isInteger(v)&&v>0);
     const ctx = Math.max(Number(entry.max_input_tokens)||0, ...windowsMax, 131_072);
     models.push({
       id: key,

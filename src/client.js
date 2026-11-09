@@ -21,6 +21,7 @@ import {
   QoderUpstreamStatusError,
 } from "./chat.js";
 import { resolveAndFetchUsage } from "./usage.js";
+import { markAnswered } from "./session.js";
 
 /** Retry backoff: upstream hint (retryAfterSeconds) when present, else ~1s/attempt. */
 function computeRetryDelayMs(error, attempt, overrideMs) {
@@ -120,7 +121,7 @@ export class QoderLiteClient {
         await sleep(delayMs, options.signal);
       }
 
-      const { response } = await sendQoderChatRequest({
+      const { response, task } = await sendQoderChatRequest({
         model: body.model,
         body,
         credentials: await this.currentCredentials(),
@@ -139,7 +140,9 @@ export class QoderLiteClient {
         upstreamError = new QoderUpstreamStatusError(403, text);
       } else {
         try {
-          return await unwrapQoderSSEResponse(response, body.model, body.tool_choice === "none" ? [] : (body.tools || []));
+          const translated = await unwrapQoderSSEResponse(response, body.model, body.tool_choice === "none" ? [] : (body.tools || []));
+          if (translated.ok && task) markAnswered(task);
+          return translated;
         } catch (error) {
           if (error?.name === "QoderUpstreamStatusError") upstreamError = error;
           else throw error;

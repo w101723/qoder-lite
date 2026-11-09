@@ -21,10 +21,13 @@ export function modelForRequest(raw, body = {}) {
       if (match) params.reasoning_effort = match;
     } else if (asked && asked !== "none") params.reasoning_effort = asked;
   }
-  const windows = raw.context_config?.windows || raw.context_config?.options || [];
-  const list = (Array.isArray(windows) ? windows : []).map((v) => Number(v?.tokens ?? v?.length ?? v)).filter((v) => Number.isInteger(v) && v > 0).sort((a,b)=>a-b);
+  const cc = raw.context_config ?? raw.contextConfig ?? {};
+  const values = Object.values(cc || {}).map((v) => Number(v?.token_count)).filter((v) => Number.isInteger(v) && v > 0);
+  const fallback = raw.available_context_windows ?? raw.availableContextWindows ?? [];
+  const list = [...new Set(values.length ? values : (Array.isArray(fallback) ? fallback : []).map(Number))].filter((v) => Number.isInteger(v) && v > 0).sort((a,b)=>a-b);
+  const defaultWindow = Object.values(cc || {}).find((v) => v?.is_default === true || v?.is_default === 1 || v?.is_default === "1")?.token_count || raw.default_context_window || raw.max_input_tokens || 0;
   const needed = Math.ceil(Buffer.byteLength(JSON.stringify([body.messages || [], body.tools || []])) / 3) + Number(body.max_completion_tokens || body.max_tokens || 32768);
-  if (list.length) params.context_length = list.find((v) => v >= needed) || list[list.length - 1];
+  if (list.length) params.context_length = Number(defaultWindow) >= needed ? Number(defaultWindow) : (list.find((v) => v >= needed) || list[list.length - 1]);
   const cfg = {
     key: raw.key, display_name: raw.display_name || raw.key,
     model: "", format: raw.format || "", is_vl: !!raw.is_vl,

@@ -68,6 +68,40 @@ try {
   const got=parser2.feed('<function=ping><parameter=name>hello</parameter></function>');
   assert.equal(got[0].name,"ping");
   assert.equal(got[0].args,'{"name":"hello"}');
+
+
+// Request identity and deterministic task lifetime: the same tool-loop
+// must retain its request_set_id, even if the normalized reply has images.
+{
+  const source = [{role:"user",content:"review files"},{role:"assistant",tool_calls:[{type:"function",function:{name:"read",arguments:"{}"}}]},{role:"tool",content:"done"}];
+  const session = sessionFor({messages:source},"u");
+  const first = taskFor(session,source);
+  const second = taskFor(session,source);
+  assert.equal(first.id,second.id);
+  assert.equal(modelForRequest({key:"abc",is_reasoning:true,context_config:{"200K":{token_count:200000,is_default:true},"400K":{token_count:400000}}},{messages:source}).parameters.context_length,200000);
+  const credsFile = path.join(folder,"device.json");
+  let oauthCalls=0;
+  const userAPI=async (url)=>{
+    if (url.endsWith("/api/v1/userinfo")) return new Response(JSON.stringify({id:"uid0",name:"Account"}));
+    if (url.endsWith("/api/v1/me/jobToken")) return new Response(JSON.stringify({token:"jt-device",refresh_token:"jr-device",expires_in:3600000}));
+    throw Error(url);
+  };
+  const dm=new CredentialManager({authFile:credsFile,fetchImpl:userAPI,region:"INTL",loginImpl:async()=>({accessToken:"dt-device",refreshToken:"dr-device",userId:"uid0"})});
+  const before=process.env.QODER_OPEN_BROWSER;
+  process.env.QODER_OPEN_BROWSER="0";
+  try {
+    await dm.initiate();
+    const cred=await dm.resolve();
+    assert.equal(cred.accessToken,"jt-device");
+    assert.ok(cred.providerSpecificData.machineId);
+    const reload = new CredentialManager({authFile:credsFile,fetchImpl:userAPI,region:"INTL"});
+    assert.equal((await reload.resolve()).providerSpecificData.machineId, cred.providerSpecificData.machineId);
+  } finally {
+    if (before === undefined) delete process.env.QODER_OPEN_BROWSER;
+    else process.env.QODER_OPEN_BROWSER=before;
+  }
+}
+
   console.log("desktop refactor tests passed");
 } finally {
   await fs.rm(folder,{recursive:true,force:true});

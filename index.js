@@ -53,4 +53,7 @@ export {
 export { buildCosyHeaders, generateMachineId } from "./src/cosy.js";
 export { getQoderUsage, resolveAndFetchUsage } from "./src/usage.js";
 export { qoderEncodeBody } from "./src/encoding.js";
+export { CredentialManager, jobExpiry } from "./src/credentialManager.js";
+export { sessionFor, taskFor } from "./src/session.js";
+export { modelForRequest } from "./src/modelConfig.js";
 export * from "./src/constants.js";

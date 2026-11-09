@@ -15,11 +15,13 @@
 
 import {
   QODER_JOB_TOKEN_EXCHANGE_URL,
+  QODER_JOB_TOKEN_REFRESH_URL,
   QODER_USERINFO_URL,
   QODER_IDE_VERSION,
   QODER_CLIENT_TYPE,
 } from "./constants.js";
 import { fetchWithTimeout } from "./http.js";
+import crypto from "node:crypto";
 
 export const PAT_PREFIX = "pt-";
 export const JOB_TOKEN_PREFIX = "jt-";
@@ -40,10 +42,14 @@ const PAT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** @type {Map<string, { accessToken: string, userId: string, expiresAt: number }>} */
 const patJobCache = new Map();
+const machineIds = new Map();
+const inflightPat = new Map();
 
 /** Clear the PAT→job-token cache (mainly for tests). */
 export function clearPatJobCache() {
   patJobCache.clear();
+  machineIds.clear();
+  inflightPat.clear();
 }
 
 /**
@@ -82,15 +88,22 @@ export async function exchangeJobToken(pat, { fetchImpl, timeoutMs } = {}) {
   const data = await res.json();
   if (!data.token) throw new Error("qoder PAT exchange returned no job token");
 
-  let expiresAt = Date.now() + PAT_DEFAULT_TTL_MS;
-  if (data.expires_at) {
-    const parsed = Date.parse(data.expires_at);
-    if (!Number.isNaN(parsed)) expiresAt = parsed;
-  } else if (typeof data.expires_in === "number" && data.expires_in > 0) {
-    // expires_in is in SECONDS (OAuth convention) — convert to ms.
-    expiresAt = Date.now() + data.expires_in * 1000;
-  }
+  const expiresAt = expiryOfJob(data);
   return { jobToken: data.token, jobRefreshToken: data.refresh_token || "", expiresAt };
+}
+
+// Qoder's job-token API reports expires_in in milliseconds. Legacy mocks
+// may provide seconds when the field is below one hour; honor the contract
+// rather than extrapolating a 24-hour token.
+function expiryOfJob(data) {
+  for (const key of ["expire_time", "expires_at"]) {
+    const raw = data?.[key];
+    const n = Number(raw);
+    const when = n > 0 ? (n < 1e12 ? n * 1000 : n) : Date.parse(String(raw ?? ""));
+    if (Number.isFinite(when) && when > Date.now()) return when;
+  }
+  if (Number(data?.expires_in) > 0) return Date.now() + Number(data.expires_in);
+  return Date.now() + PAT_DEFAULT_TTL_MS;
 }
 
 /**
@@ -126,15 +139,49 @@ export async function fetchUserIdForJobToken(jobToken, { fetchImpl, timeoutMs } 
 export async function resolvePatCredential(pat, options = {}) {
   const cached = patJobCache.get(pat);
   if (cached && cached.expiresAt - Date.now() > PAT_REFRESH_BUFFER_MS) return cached;
-
-  const { jobToken, expiresAt } = await exchangeJobToken(pat, options);
-  const userId = await fetchUserIdForJobToken(jobToken, options);
-  const resolved = { accessToken: jobToken, userId, expiresAt };
-  // A missing userId means userinfo failed or returned an incomplete body.
-  // Return the result for this call (the caller may have a stored fallback),
-  // but do not poison the long-lived cache — the next call should retry.
-  if (userId) patJobCache.set(pat, resolved);
-  return resolved;
+  if (inflightPat.has(pat)) return inflightPat.get(pat);
+  const work = (async () => {
+    let token, refresh, expiresAt, userId;
+    if (cached?.refreshToken) {
+      try {
+        const result = await fetchWithTimeout(
+          QODER_JOB_TOKEN_REFRESH_URL,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: cached.refreshToken }) },
+          options.timeoutMs, options.fetchImpl,
+        );
+        if (result.ok) {
+          const data = await result.json();
+          if (data.token && data.refresh_token) {
+            token = data.token; refresh = data.refresh_token;
+            expiresAt = expiryOfJob(data);
+            userId = cached.userId;
+          }
+        } else if (![400,401,403].includes(result.status)) {
+          throw new Error("qoder job refresh failed: HTTP " + result.status);
+        }
+      } catch (error) {
+        if (!/qoder job refresh failed/.test(error.message)) {
+          // A network error should not consume the PAT. Fall back to the PAT exchange.
+        } else throw error;
+      }
+    }
+    if (!token) {
+      const exchanged = await exchangeJobToken(pat, options);
+      token = exchanged.jobToken;
+      refresh = exchanged.jobRefreshToken;
+      expiresAt = exchanged.expiresAt;
+      userId = await fetchUserIdForJobToken(token, options);
+    }
+    const resolved = {
+      accessToken: token, refreshToken: refresh, userId, expiresAt,
+      machineId: machineIds.get(pat) || cached?.machineId || crypto.randomUUID(),
+    };
+    machineIds.set(pat, resolved.machineId);
+    if (userId) patJobCache.set(pat, resolved);
+    return resolved;
+  })();
+  inflightPat.set(pat, work);
+  try { return await work; } finally { if (inflightPat.get(pat) === work) inflightPat.delete(pat); }
 }
 
 /**
@@ -161,7 +208,7 @@ export async function resolveQoderCredentials(credentials, options = {}) {
         authMethod: "pat",
         ...(credentials?.providerSpecificData || {}),
         userId: resolved.userId || credentials?.providerSpecificData?.userId || "",
-        machineId: credentials?.providerSpecificData?.machineId || "",
+        machineId: credentials?.providerSpecificData?.machineId || resolved.machineId,
       },
     };
   }

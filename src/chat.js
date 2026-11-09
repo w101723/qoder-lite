@@ -14,11 +14,12 @@
  */
 
 import crypto from "crypto";
+import os from "node:os";
 
 import { qoderEncodeBody } from "./encoding.js";
 import { buildCosyHeaders } from "./cosy.js";
 import { rewriteQoderMessageAttachments } from "./attachments.js";
-import { sessionFor, taskFor, markAnswered } from "./session.js";
+import { sessionFor, taskFor } from "./session.js";
 import { modelForRequest } from "./modelConfig.js";
 import { normalizeToolTurns } from "./toolCalls.js";
 import { ToolStreamParser } from "./toolStream.js";
@@ -192,7 +193,7 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
   const lastUser = lastUserText(messages);
   const psd = credentials.providerSpecificData || {};
   const sessionId = sessionFor(body, psd.userId);
-  const task = taskFor(sessionId, messages);
+  const task = taskFor(sessionId, body.messages || []);
   const requestId = crypto.randomUUID();
   const { config: nativeConfig, parameters: modelParams } = modelForRequest(modelConfig, body);
   const sys = { type: "text", text: "You are a Qoder agent. Use the instructions below and the tools available to you to assist the user." + (systemText ? "\n\n" + systemText : "") };
@@ -338,6 +339,8 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
   delete cosyHeaders["Cosy-Clientip"];
   delete cosyHeaders["Cosy-Machinetoken"];
   delete cosyHeaders["Cosy-Machinetype"];
+  const hostname = os.hostname().trim();
+  if (/^[\x21-\x7e]{1,96}$/.test(hostname)) cosyHeaders["Cosy-MachineHostname"] = hostname;
   const headers = {
     "Content-Type": "application/json",
     Accept: "text/event-stream",
@@ -357,8 +360,7 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
     cleanup();
   }
 
-  if (response.ok) markAnswered(task);
-  return { response, qoderKey, payload, url };
+  return { response, qoderKey, payload, url, task };
 }
 
 /**

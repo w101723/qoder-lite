@@ -6,7 +6,7 @@ Qoder 的 OpenAI-compatible HTTP 服务。
 
 | 环境变量 | 必填 | 默认值 | 说明 |
 |---|---:|---|---|
-| `QODER_PAT` | 是 | — | Qoder PAT，必须以 `pt-` 开头（须与 SOURCE 地区匹配） |
+| `QODER_PAT` | 否 | — | 配置则自动使用 PAT；留空则启动设备登录（须与 SOURCE 地区匹配） |
 | `SOURCE` | 否 | `INTL` | 不设置时国际版；设为 `CN` 时中国版 |
 | `API_KEY` | 是 | — | 调用本服务 API 时使用的 Bearer Key |
 | `HOST` | 否 | `0.0.0.0` | 服务监听地址 |
@@ -21,7 +21,7 @@ ghcr.io/w101723/qoder-lite:latest
 支持 `linux/amd64` 和 `linux/arm64`。
 
 ```bash
-export QODER_PAT="pt-你的token"
+export QODER_PAT="pt-你的token" # 可选；留空时使用浏览器登录
 export API_KEY="$(openssl rand -hex 32)"
 
 docker pull ghcr.io/w101723/qoder-lite:latest
@@ -380,3 +380,6 @@ docker run --rm -p 127.0.0.1:3000:3000 \
   -e QODER_AUTH_FILE=/data/auth.json -v "$PWD/qoder-auth:/data" \
   ghcr.io/w101723/qoder-lite:latest
 ```
+
+
+> **安全提示**：PAT 和刷新凭证不应写入代码或镜像。默认 auth.json 仅当前运行用户可读；在 Docker 内运行时，挂载卷必须可被容器的 node 用户（UID 1000）写入。

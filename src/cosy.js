@@ -18,6 +18,8 @@
 
 import crypto from "crypto";
 
+const realOS = () => ({x64:"x86_64",arm64:"aarch64"}[process.arch] || process.arch) + "_" + process.platform;
+
 import {
   QODER_CLIENT_TYPE,
   QODER_DATA_POLICY,
@@ -162,7 +164,7 @@ export function buildCosyHeaders(body, requestUrl, creds) {
     "Cosy-Machineid": machineId,
     "Cosy-Machinetoken": machineId,
     "Cosy-Machinetype": QODER_MACHINE_TYPE,
-    "Cosy-Machineos": QODER_MACHINE_OS,
+    "Cosy-Machineos": realOS(),
     "Cosy-Clienttype": QODER_CLIENT_TYPE,
     "Cosy-Business-Product": "app",
     "Cosy-Business-Type": "agent",
