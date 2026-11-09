@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { initiateDeviceFlow, loginWithDeviceFlow, fetchUserInfo } from "./deviceFlow.js";
 import { QODER_OPENAPI_BASE, QODER_SOURCE } from "./constants.js";
 
@@ -82,6 +83,10 @@ export class CredentialManager {
     if (this.pat) return this.exchange();
     const flow = initiateDeviceFlow();
     this.log.log?.("[qoder-lite] Login required. Open: " + flow.verificationUriComplete);
+    if (process.env.QODER_OPEN_BROWSER !== "0") {
+      const command = process.platform === "darwin" ? ["open", [flow.verificationUriComplete]] : process.platform === "win32" ? ["cmd", ["/c","start","",flow.verificationUriComplete]] : ["xdg-open", [flow.verificationUriComplete]];
+      try { const child = spawn(command[0], command[1], { detached: true, stdio: "ignore" }); child.on("error", () => {}); child.unref(); } catch {}
+    }
     const poll = this.loginImpl || loginWithDeviceFlow;
     const got = await poll(flow, { fetchImpl: this.fetch, totalTimeoutMs: 15 * 60_000 });
     const profile = await fetchUserInfo(got.accessToken, { fetchImpl: this.fetch });

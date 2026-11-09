@@ -14,9 +14,12 @@ export function normalizeToolTurns(messages) {
       out.push({ ...m, tool_calls: calls });
       pending = calls.map((c) => c.id);
     } else if (m.role === "tool") {
+      const images = Array.isArray(m.content) ? m.content.filter((p)=>p?.type === "image_url") : [];
+      const content = images.length ? m.content.filter((p)=>p?.type === "text").map((p)=>p.text).join("\n") : m.content;
       const requested = pending.includes(m.tool_call_id) ? m.tool_call_id : pending[0];
       if (requested) {
-        out.push({ ...m, tool_call_id: requested });
+        out.push({ ...m, content, tool_call_id: requested });
+        if (images.length) out.push({role:"user",content:[{type:"text",text:"[Images returned by tool " + requested + "]"}, ...images]});
         pending = pending.filter((x) => x !== requested);
       } else out.push({ role: "user", content: typeof m.content === "string" ? m.content : JSON.stringify(m.content || "") });
     } else {

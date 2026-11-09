@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "test": "node test/smoke.mjs && node test/server-unit.mjs && node test/server-integration.mjs && node test/region-images.mjs && node test/upload-errors.mjs && node test/logger.mjs"
+    "test": "node test/smoke.mjs && node test/server-unit.mjs && node test/server-integration.mjs && node test/region-images.mjs && node test/upload-errors.mjs && node test/logger.mjs && node test/desktop-refactor.mjs"
   },
   "engines": {
     "node": ">=18.17"

@@ -44,12 +44,12 @@ ok("SOURCE=CN switches region; invalid values are rejected", () => {
   assert.throws(() => loadServerConfig({ QODER_PAT: "pt-a", API_KEY: "k", SOURCE: "other" }), /SOURCE must/);
 });
 
-ok("config rejects missing QODER_PAT, API_KEY, and bad PORT together", () => {
+ok("config accepts optional QODER_PAT but requires API_KEY and valid PORT", () => {
   assert.throws(
     () => loadServerConfig({ PORT: "nope" }),
     (err) => err instanceof ConfigError
       && err.problems.length === 3
-      && err.problems.some((p) => p.includes("QODER_PAT"))
+      && !err.problems.some((p) => p.includes("QODER_PAT"))
       && err.problems.some((p) => p.includes("API_KEY"))
       && err.problems.some((p) => p.includes("PORT")),
   );

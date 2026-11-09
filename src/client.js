@@ -138,7 +138,7 @@ export class QoderLiteClient {
         upstreamError = new QoderUpstreamStatusError(403, text);
       } else {
         try {
-          return await unwrapQoderSSEResponse(response, body.model);
+          return await unwrapQoderSSEResponse(response, body.model, body.tool_choice === "none" ? [] : (body.tools || []));
         } catch (error) {
           if (error?.name === "QoderUpstreamStatusError") upstreamError = error;
           else throw error;

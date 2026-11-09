@@ -79,7 +79,7 @@ ok("buildCosyHeaders produces the full Cosy-* set", () => {
   assert.equal(headers["Cosy-Machineid"], "machine-1");
   assert.equal(headers["Cosy-Sigpath"], "/api/v2/service/pro/sse/agent_chat_generation");
   assert.ok(Number(headers["Cosy-Bodylength"]) === Buffer.from("test-body").length);
-  assert.equal(headers["Cosy-Clienttype"], "5");
+  assert.equal(headers["Cosy-Clienttype"], "10");
   assert.ok(headers["X-Request-Id"]);
 });
 
@@ -121,7 +121,7 @@ ok("resolveQoderCredentials exchanges a PAT via the job-token endpoint", async (
   assert.equal(resolved.providerSpecificData.authMethod, "pat");
   assert.equal(resolved.providerSpecificData.userId, "user-42");
   assert.equal(calls[0].init.body, JSON.stringify({ personal_token: "pt-secret" }));
-  assert.equal(calls[0].init.headers["Cosy-Version"], "1.0.0");
+  assert.equal(calls[0].init.headers["Cosy-Version"], "1.1.69");
 });
 
 ok("resolveQoderCredentials caches the job token across calls", async () => {

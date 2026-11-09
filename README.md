@@ -348,3 +348,35 @@ Authorization: Bearer <API_KEY>
   "resetAt": "2026-06-16T07:21:10.000Z"
 }
 ```
+
+
+## Qoder desktop protocol and login (v20261109+)
+
+The pre-refactor snapshot is [v20261109](https://github.com/w101723/qoder-lite/tree/v20261109).
+
+- With **QODER_PAT** set, no browser login is needed. PAT job tokens, refresh pairs and
+  a stable machine ID are kept under QODER_AUTH_FILE (default:
+  ~/.qoder-lite/auth.json; restrict access to this file).
+- Without **QODER_PAT**, startup automatically launches the system browser
+  (if available) and also prints a device-login URL, then waits for authorization.
+  A successful session is persisted across restarts. Set QODER_OPEN_BROWSER=0
+  for headless servers and open the URL manually.
+- API_KEY remains mandatory for the local OpenAI-compatible HTTP API.
+- CN and international sessions are separate. Configure SOURCE=CN and use
+  the matching sign-in/PAT. Persist QODER_AUTH_FILE via a Docker volume.
+- The chat endpoint uses a Qoder desktop-app identity (client type 10)
+  and native request task/session IDs. Qoder's response formats and supported
+  model metadata can change; validate live accounts before production use.
+- Stream tool-call lifting supports declared native OpenAI tools and selected
+  XML/JSON tool-call conventions; keep your tools' schemas explicit.
+- The existing 10605 / CALL_COUNT_LIMIT retry policy is unchanged.
+
+A no-PAT container needs an interactive login URL in its logs and a persistent
+volume, for example:
+ 
+```sh
+docker run --rm -p 127.0.0.1:3000:3000 \
+  -e API_KEY="$API_KEY" -e QODER_OPEN_BROWSER=0 \
+  -e QODER_AUTH_FILE=/data/auth.json -v "$PWD/qoder-auth:/data" \
+  ghcr.io/w101723/qoder-lite:latest
+```

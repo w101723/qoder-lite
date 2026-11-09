@@ -21,6 +21,7 @@ import { rewriteQoderMessageAttachments } from "./attachments.js";
 import { sessionFor, taskFor, markAnswered } from "./session.js";
 import { modelForRequest } from "./modelConfig.js";
 import { normalizeToolTurns } from "./toolCalls.js";
+import { ToolStreamParser } from "./toolStream.js";
 import { resolveQoderCredentials, isQoderPat, isQoderJobToken } from "./pat.js";
 import { getQoderModelConfig, resolveQoderModels } from "./models.js";
 import { withConnectTimeout } from "./http.js";
@@ -217,7 +218,14 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
       image_urls: null,
       aliyun_user_type: "",
       system: [sys],
-      messages: [{ role: "system", content: [sys] }, ...messages],
+      messages: [{ role: "system", content: [sys] }, ...messages.map((m,i,all) => {
+        if (m.role !== "user" || !Array.isArray(m.content)) return m;
+        const content = m.content.map((block,idx) => {
+          if (i === all.length - 1 && idx === m.content.length - 1) return { ...block, cache_control: { type: "ephemeral" } };
+          return block;
+        });
+        return { ...m, content, contents: content };
+      })],
       tools: Array.isArray(tools) ? tools : [],
       parameters: { max_tokens: maxTokens, ...modelParams },
       chat_context: {
@@ -346,6 +354,10 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
     machineId: psd.machineId || "",
   });
 
+  // Desktop-agent identity: the chat request does not send the regular REST client-IP header.
+  delete cosyHeaders["Cosy-Clientip"];
+  delete cosyHeaders["Cosy-Machinetoken"];
+  delete cosyHeaders["Cosy-Machinetype"];
   const headers = {
     "Content-Type": "application/json",
     Accept: "text/event-stream",
@@ -386,7 +398,7 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
  * [DONE]/error frame (agent keepalive), so on terminal events we cancel
  * the upstream reader and close our stream immediately.
  */
-export async function unwrapQoderSSEResponse(response, model) {
+export async function unwrapQoderSSEResponse(response, model, tools = []) {
   if (!response.ok || !response.body) return response;
 
   const decoder = new TextDecoder();
@@ -410,6 +422,25 @@ export async function unwrapQoderSSEResponse(response, model) {
   const upstreamDrained = peek.upstreamDone === true;
   const encoder = new TextEncoder();
   let doneEmitted = false;
+  const parser = new ToolStreamParser(tools);
+  let toolIndex = 0;
+  const transform = (raw, final = false) => {
+    const source = JSON.parse(raw);
+    const choice = source.choices?.[0];
+    if (!choice || (!tools?.length && !final)) return [raw];
+    const output = [];
+    const delta = choice.delta || {};
+    const pieces = parser.feed(typeof delta.content === "string" ? delta.content : "", final);
+    for (const item of pieces) {
+      if (item.kind === "text") output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: { ...delta, content: item.text }, finish_reason: null }] }));
+      else output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: { role: "assistant", tool_calls: [parser.newCall(item, toolIndex++)] }, finish_reason: null }] }));
+    }
+    const rest = { ...delta }; delete rest.content;
+    if (Object.keys(rest).length && !(Object.keys(rest).length === 1 && rest.role === "assistant")) output.push(JSON.stringify({ ...source, choices: [{...choice, delta: rest, finish_reason: null}] }));
+    if (choice.finish_reason) output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: {}, finish_reason: parser.calls ? "tool_calls" : choice.finish_reason }] }));
+    if (!pieces.length && !Object.keys(rest).length && !choice.finish_reason && !final) return [];
+    return output;
+  };
 
   const processLine = (line, controller) => {
     const trimmed = line.replace(/\r$/, "").trim();
@@ -444,13 +475,23 @@ export async function unwrapQoderSSEResponse(response, model) {
     }
     if (!inner) return;
     if (inner === "[DONE]") {
+      if (tools?.length) {
+        try { for (const item of parser.feed("", true)) {
+          const delta = item.kind === "text" ? { content: item.text } : { tool_calls: [parser.newCall(item, toolIndex++)] };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ object: "chat.completion.chunk", model, choices: [{index:0,delta,finish_reason:null}] })}\n\n`));
+        } } catch (e) { controller.enqueue(encoder.encode(`data: ${JSON.stringify({error:{message:e.message,code:e.code||"tool_parse_error"}})}\n\n`)); }
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       doneEmitted = true;
       return;
     }
     // Strip embedded newlines so the SSE frame stays a single event.
     const sanitized = inner.replace(/\r?\n/g, "");
-    controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`));
+    if (!tools?.length) { controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`)); return; }
+    let outputs;
+    try { outputs = transform(sanitized, false); }
+    catch (e) { controller.enqueue(encoder.encode(`data: ${JSON.stringify({error:{message:e.message,code:e.code||"tool_parse_error"}})}\n\n`)); doneEmitted=true; return; }
+    for (const output of outputs) controller.enqueue(encoder.encode(`data: ${output}\n\n`));
   };
 
   const stream = new ReadableStream({
