@@ -60,8 +60,8 @@ export const QODER_MAX_PAYLOAD_BYTES = 6 * 1024 * 1024;
 
 // COSY header constants. These are not arbitrary — the upstream signature
 // validation matches them against the values used at signing time.
-export const QODER_IDE_VERSION = "1.0.0";
-export const QODER_CLIENT_TYPE = "5";
+export const QODER_IDE_VERSION = "1.1.69";
+export const QODER_CLIENT_TYPE = "10";
 export const QODER_DATA_POLICY = "disagree";
 export const QODER_LOGIN_VERSION = "v2";
 export const QODER_MACHINE_OS = "x86_64_windows";

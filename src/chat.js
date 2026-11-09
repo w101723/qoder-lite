@@ -18,6 +18,9 @@ import crypto from "crypto";
 import { qoderEncodeBody } from "./encoding.js";
 import { buildCosyHeaders } from "./cosy.js";
 import { rewriteQoderMessageAttachments } from "./attachments.js";
+import { sessionFor, taskFor, markAnswered } from "./session.js";
+import { modelForRequest } from "./modelConfig.js";
+import { normalizeToolTurns } from "./toolCalls.js";
 import { resolveQoderCredentials, isQoderPat, isQoderJobToken } from "./pat.js";
 import { getQoderModelConfig, resolveQoderModels } from "./models.js";
 import { withConnectTimeout } from "./http.js";
@@ -171,7 +174,7 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
     credentials, signal: options.signal, fetchImpl: options.fetchImpl,
     uploadFn: options.uploadFn, log: options.log,
   });
-  const { messages, systemText } = normalizeMessages(rewritten);
+  const { messages, systemText } = normalizeMessages(normalizeToolTurns(rewritten));
   const tools = body.tools;
   const isReasoning = !!modelConfig.is_reasoning;
   const maxOutputTokens = Number(modelConfig.max_output_tokens) || 0;
@@ -187,15 +190,18 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
 
   const lastUser = lastUserText(messages);
   const psd = credentials.providerSpecificData || {};
-  const sessionId = stableHash("qoder-session", psd.userId, qoderKey);
-  const recordId = stableChatRecordId(qoderKey, messages, tools, maxTokens);
+  const sessionId = sessionFor(body, psd.userId);
+  const task = taskFor(sessionId, messages);
+  const requestId = crypto.randomUUID();
+  const { config: nativeConfig, parameters: modelParams } = modelForRequest(modelConfig, body);
+  const sys = { type: "text", text: "You are a Qoder agent. Use the instructions below and the tools available to you to assist the user." + (systemText ? "\n\n" + systemText : "") };
 
   return {
     qoderKey,
     payload: {
-      request_id: crypto.randomUUID(),
-      request_set_id: recordId,
-      chat_record_id: recordId,
+      request_id: requestId,
+      request_set_id: task.id,
+      chat_record_id: requestId,
       session_id: sessionId,
       stream: true,
       chat_task: "FREE_INPUT",
@@ -203,17 +209,17 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
       is_retry: false,
       source: 1,
       version: "3",
-      session_type: "qodercli",
+      session_type: "app",
       agent_id: "agent_common",
       task_id: "common",
       code_language: "",
       chat_prompt: "",
       image_urls: null,
       aliyun_user_type: "",
-      system: systemText,
-      messages,
+      system: [sys],
+      messages: [{ role: "system", content: [sys] }, ...messages],
       tools: Array.isArray(tools) ? tools : [],
-      parameters: { max_tokens: maxTokens },
+      parameters: { max_tokens: maxTokens, ...modelParams },
       chat_context: {
         chatPrompt: "",
         imageUrls: null,
@@ -225,18 +231,19 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
         features: [],
         text: lastUser,
       },
-      model_config: modelConfig,
+      model_config: nativeConfig,
       business: {
-        product: "cli",
-        version: "1.0.0",
+        product: "app",
+        version: "1.1.69",
         type: "agent",
-        stage: "start",
-        id: crypto.randomUUID(),
+        stage: task.answered ? "processing" : "start",
+        id: task.id,
         name: truncate(lastUser, 30),
-        begin_at: Date.now(),
+        begin_at: task.begin,
       },
     },
     modelConfig,
+    task,
   };
 }
 
@@ -318,7 +325,7 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
     throw new Error("qoder credential is missing accessToken; reconnect the account");
   }
 
-  const { qoderKey, payload } = await buildQoderRequestBody({
+  const { qoderKey, payload, task } = await buildQoderRequestBody({
     model,
     body,
     credentials: resolved,
@@ -358,6 +365,7 @@ export async function sendQoderChatRequest({ model, body, credentials, signal, c
     cleanup();
   }
 
+  if (response.ok) markAnswered(task);
   return { response, qoderKey, payload, url };
 }
 

@@ -23,7 +23,8 @@ import {
 import { fetchWithTimeout } from "./http.js";
 
 export const DEVICE_FLOW_POLL_INTERVAL_MS = 2_000;
-export const DEVICE_FLOW_EXPIRES_IN_MS = 5 * 60 * 1000;
+export const DEVICE_FLOW_EXPIRES_IN_MS = 15 * 60 * 1000;
+const CLIENT_ID = (process.env.SOURCE || "").toUpperCase() === "CN" ? "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb" : "732aef47-9cf2-46a2-95fe-4cebb5d0d1fa";
 
 function base64Url(buf) {
   return buf
@@ -56,6 +57,7 @@ export function initiateDeviceFlow() {
     challenge,
     challenge_method: "S256",
     machine_id: machineId,
+    client_id: CLIENT_ID,
     nonce,
   });
 
@@ -174,6 +176,7 @@ export async function fetchUserInfo(accessToken, options = {}) {
       name: (body.name || body.username || "").trim(),
       email: (body.email || "").trim(),
       organizationId: (body.organization_id || "").trim(),
+      userId: String(body.id || body.user_id || body.uid || ""),
     };
   } catch {
     return { name: "", email: "" };

@@ -16,11 +16,12 @@ import { QODER_SOURCE } from "./src/constants.js";
 import { loadServerConfig } from "./src/server/config.js";
 import { createRequestHandler } from "./src/server/app.js";
 import { createTimestampLogger } from "./src/server/logger.js";
+import { CredentialManager } from "./src/credentialManager.js";
 
 // Log through an injected formatter, not global console replacement.
 const log = createTimestampLogger(console);
 
-function main() {
+async function main() {
   let config;
   try {
     config = loadServerConfig(process.env);
@@ -46,13 +47,9 @@ function main() {
     throw new Error("SOURCE configuration disagrees with loaded Qoder upstream");
   }
 
-  // One client instance for the whole process so credential, token, and
-  // model caches stay effective across requests. Inject the timestamped logger
-  // so upstream-403 retries are visible in the service log.
-  const client = new QoderLiteClient(
-    { apiKey: config.qoderPat, providerSpecificData: {} },
-    { log },
-  );
+  const credentials = new CredentialManager({ pat: config.qoderPat, authFile: config.authFile, log });
+  await credentials.initiate();
+  const client = new QoderLiteClient({}, { log, credentialManager: credentials });
 
   const server = http.createServer(createRequestHandler({ client, apiKey: config.apiKey, log }));
 
@@ -73,4 +70,4 @@ function main() {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-main();
+main().catch((err) => { console.error("[qoder-lite] startup failed:", err.message); process.exitCode = 1; });

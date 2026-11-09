@@ -21,8 +21,7 @@ export function loadServerConfig(env = process.env) {
   const problems = [];
 
   const qoderPat = String(env.QODER_PAT ?? "").trim();
-  if (!qoderPat) problems.push("QODER_PAT is required");
-  else if (!qoderPat.startsWith("pt-")) problems.push("QODER_PAT must use the pt- prefix (got a token that does not start with \"pt-\")");
+  if (qoderPat && !qoderPat.startsWith("pt-")) problems.push("QODER_PAT must use the pt- prefix (got a token that does not start with \"pt-\")");
 
   const apiKey = String(env.API_KEY ?? "").trim();
   if (!apiKey) problems.push("API_KEY is required");
@@ -39,5 +38,5 @@ export function loadServerConfig(env = process.env) {
   }
 
   if (problems.length) throw new ConfigError(problems);
-  return { qoderPat, apiKey, host, port, source };
+  return { qoderPat, apiKey, host, port, source, authFile: env.QODER_AUTH_FILE || "" };
 }

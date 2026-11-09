@@ -51,6 +51,11 @@ export class QoderLiteClient {
   constructor(credentials, options = {}) {
     this.credentials = credentials;
     this.options = options;
+    this.credentialManager = options.credentialManager;
+  }
+
+  async currentCredentials() {
+    return this.credentialManager ? this.credentialManager.resolve() : this.credentials;
   }
 
   get isPat() {
@@ -62,7 +67,7 @@ export class QoderLiteClient {
    * Useful once at startup to check the PAT is valid and cache the userId.
    */
   async resolveCredentials(options = {}) {
-    return resolveQoderCredentials(this.credentials, { ...this.options, ...options });
+    return resolveQoderCredentials(await this.currentCredentials(), { ...this.options, ...options });
   }
 
   /**
@@ -70,14 +75,14 @@ export class QoderLiteClient {
    * shape: { models: [...], rawConfigs: Map } | null.
    */
   async listModels(options = {}) {
-    return resolveQoderModels(this.credentials, { ...this.options, ...options });
+    return resolveQoderModels(await this.currentCredentials(), { ...this.options, ...options });
   }
 
   /**
    * Get the exact server-published model_config for a model key.
    */
   async getModelConfig(modelKey, options = {}) {
-    return getQoderModelConfig(this.credentials, modelKey, { ...this.options, ...options });
+    return getQoderModelConfig(await this.currentCredentials(), modelKey, { ...this.options, ...options });
   }
 
   /**
@@ -117,7 +122,7 @@ export class QoderLiteClient {
       const { response } = await sendQoderChatRequest({
         model: body.model,
         body,
-        credentials: this.credentials,
+        credentials: await this.currentCredentials(),
         signal: options.signal,
         connectTimeoutMs: options.connectTimeoutMs,
         fetchImpl: this.options.fetchImpl,
@@ -245,7 +250,7 @@ export class QoderLiteClient {
    *     totalUsagePercentage, isQuotaExceeded, expiresAt, resetAt }
    */
   async getUsage(options = {}) {
-    return resolveAndFetchUsage(this.credentials, { ...this.options, ...options });
+    return resolveAndFetchUsage(await this.currentCredentials(), { ...this.options, ...options });
   }
 
   /** Drop this credential's cached model catalog. */
