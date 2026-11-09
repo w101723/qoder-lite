@@ -196,7 +196,9 @@ export async function buildQoderRequestBody({ model, body, credentials, options 
   const task = taskFor(sessionId, body.messages || []);
   const requestId = crypto.randomUUID();
   const { config: nativeConfig, parameters: modelParams } = modelForRequest(modelConfig, body);
-  const sys = { type: "text", text: "You are a Qoder agent. Use the instructions below and the tools available to you to assist the user." + (systemText ? "\n\n" + systemText : "") };
+  let systemInstruction = "You are a Qoder agent. Use the instructions below and the tools available to you to assist the user." + (systemText ? "\n\n" + systemText : "");
+  if (body.tool_choice === "required" && Array.isArray(tools) && tools.length) systemInstruction += "\nYou must call an available function in this response.";
+  const sys = { type: "text", text: systemInstruction };
 
   return {
     qoderKey,
@@ -406,6 +408,7 @@ export async function unwrapQoderSSEResponse(response, model, tools = []) {
   let doneEmitted = false;
   const parser = new ToolStreamParser(tools);
   let toolIndex = 0;
+  const native = new Map();
   const transform = (raw, final = false) => {
     const source = JSON.parse(raw);
     const choice = source.choices?.[0];
@@ -418,8 +421,38 @@ export async function unwrapQoderSSEResponse(response, model, tools = []) {
       else output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: { role: "assistant", tool_calls: [parser.newCall(item, toolIndex++)] }, finish_reason: null }] }));
     }
     const rest = { ...delta }; delete rest.content;
+    const originalCalls = Array.isArray(rest.tool_calls) ? rest.tool_calls : [];
+    delete rest.tool_calls;
+    for (const incoming of originalCalls) {
+      const upstreamIndex = Number.isInteger(incoming.index) ? incoming.index : 0;
+      let saved = native.get(upstreamIndex);
+      if (!saved) {
+        saved = { id: incoming.id || "", name: "", args: "", emitted: false, index: -1 };
+        native.set(upstreamIndex, saved);
+      }
+      if (incoming.id) saved.id = incoming.id;
+      const fragment = incoming.function?.arguments || "";
+      const name = (incoming.function?.name || "").trim();
+      if (!saved.emitted && !name) { saved.args += fragment; continue; }
+      let call;
+      if (!saved.emitted) {
+        saved.emitted = true;
+        saved.name = name;
+        saved.index = toolIndex++;
+        call = { index: saved.index, id: saved.id || "call_" + crypto.randomUUID().replaceAll("-", ""), type: "function", function: { name, arguments: saved.args + fragment } };
+        saved.args = "";
+      } else if (fragment) {
+        call = { index: saved.index, function: { arguments: fragment } };
+      }
+      if (call) output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: { tool_calls: [call] }, finish_reason: null }] }));
+    }
     if (Object.keys(rest).length && !(Object.keys(rest).length === 1 && rest.role === "assistant")) output.push(JSON.stringify({ ...source, choices: [{...choice, delta: rest, finish_reason: null}] }));
-    if (choice.finish_reason) output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: {}, finish_reason: parser.calls ? "tool_calls" : choice.finish_reason }] }));
+    if (choice.finish_reason) {
+      const emitted = [...native.values()].some((v) => v.emitted);
+      const onlyNameless = !emitted && [...native.values()].some((v) => !v.emitted) && !parser.calls;
+      if (onlyNameless) output.push(JSON.stringify({error:{message:"Qoder returned an unnamed native tool call",code:"qoder_nameless_tool"}}));
+      output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: {}, finish_reason: parser.calls || emitted ? "tool_calls" : choice.finish_reason }] }));
+    }
     if (!pieces.length && !Object.keys(rest).length && !choice.finish_reason && !final) return [];
     return output;
   };

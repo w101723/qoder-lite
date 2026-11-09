@@ -85,8 +85,8 @@ export async function fetchQoderCatalogRaw(credentials, options = {}) {
   // Job-token traffic is rejected by api3 ("Login expired" 403) — the
   // official qodercli serves it from api2 instead.
   const modelListUrl = String(creds.authToken).startsWith("jt-")
-    ? `${QODER_CHAT_BASE_ALT}/algo/api/v2/model/list`
-    : QODER_MODEL_LIST_URL;
+    ? `${QODER_CHAT_BASE_ALT}/algo/api/v2/model/list?Encode=1`
+    : `${QODER_MODEL_LIST_URL}?Encode=1`;
 
   const headers = {
     Accept: "application/json",

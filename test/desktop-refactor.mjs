@@ -102,6 +102,32 @@ try {
   }
 }
 
+
+
+// Native OpenAI tool calls can send their id/argument fragments ahead of the
+// function name. They must not be surfaced as unnamed tools.
+{
+  const { unwrapQoderSSEResponse } = await import("../src/chat.js");
+  const tools=[{type:"function",function:{name:"ping",parameters:{type:"object",properties:{}}}}];
+  const make = (delta,finish_reason=null) => {
+    const body = JSON.stringify({choices:[{index:0,delta,finish_reason}]});
+    return "data: " + JSON.stringify({statusCodeValue:200,body}) + "\n\n";
+  };
+  const parts=[
+    make({tool_calls:[{index:0,id:"call-native",function:{arguments:'{"v":'}}]}),
+    make({tool_calls:[{index:0,function:{name:"ping",arguments:"1}"}}]}),
+    make({}, "tool_calls"),
+    "data: "+JSON.stringify({statusCodeValue:200,body:"[DONE]"})+"\n\n",
+  ];
+  const result=await unwrapQoderSSEResponse(new Response(parts.join(""),{headers:{"Content-Type":"text/event-stream"}}),"dfmodel",tools);
+  const data=(await result.text()).split("\n").filter((v)=>v.startsWith("data:")&&v.trim()!=="data: [DONE]").map((v)=>JSON.parse(v.slice(5)));
+  const called=data.flatMap((v)=>v.choices?.[0]?.delta?.tool_calls||[]);
+  assert.equal(called.length,1);
+  assert.equal(called[0].function.name,"ping");
+  assert.equal(called[0].function.arguments,'{"v":1}');
+  assert.equal(called[0].id,"call-native");
+}
+
   console.log("desktop refactor tests passed");
 } finally {
   await fs.rm(folder,{recursive:true,force:true});

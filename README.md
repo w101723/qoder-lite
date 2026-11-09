@@ -383,3 +383,5 @@ docker run --rm -p 127.0.0.1:3000:3000 \
 
 
 > **安全提示**：PAT 和刷新凭证不应写入代码或镜像。默认 auth.json 仅当前运行用户可读；在 Docker 内运行时，挂载卷必须可被容器的 node 用户（UID 1000）写入。
+
+聊天请求可选传 `X-DeepSeek-Harness-Session-Id`、`X-Session-Id` 或 `X-Qoder-Session-Id`；这些值仅在本地参与生成稳定会话哈希，不会直接发送到上游。

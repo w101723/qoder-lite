@@ -108,6 +108,15 @@ async function handleChat(req, res, client) {
   }
 
   const body = await readJsonBody(req);
+  // Optional stable session identity from coding agents. Never forward
+  // the raw header to Qoder; sessionFor() hashes it before wire use.
+  const explicitSession = req.headers["x-deepseek-harness-session-id"]
+    || req.headers["x-session-id"]
+    || req.headers["x-qoder-session-id"];
+  if (body && typeof body === "object" && !Array.isArray(body) &&
+      typeof explicitSession === "string" && explicitSession.trim()) {
+    body._session = explicitSession.trim().slice(0, 128);
+  }
   const invalid = validateChatBody(body);
   if (invalid === "body") {
     throw new ServiceError(400, "Request body must be a JSON object", {
