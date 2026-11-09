@@ -453,7 +453,7 @@ export async function unwrapQoderSSEResponse(response, model, tools = []) {
       if (onlyNameless) output.push(JSON.stringify({error:{message:"Qoder returned an unnamed native tool call",code:"qoder_nameless_tool"}}));
       output.push(JSON.stringify({ ...source, choices: [{ ...choice, delta: {}, finish_reason: parser.calls || emitted ? "tool_calls" : choice.finish_reason }] }));
     }
-    if (!pieces.length && !Object.keys(rest).length && !choice.finish_reason && !final) return [];
+    if (!output.length && !pieces.length && !Object.keys(rest).length && !choice.finish_reason && !final) return [];
     return output;
   };
 

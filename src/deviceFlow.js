@@ -36,10 +36,10 @@ function base64Url(buf) {
 
 /**
  * Generate a PKCE verifier + S256 challenge pair.
- * Uses 32 random bytes (matches qodercli/Veria).
+ * Uses 64 random bytes, matching the desktop worker device flow.
  */
 export function generatePkcePair() {
-  const verifier = base64Url(crypto.randomBytes(32));
+  const verifier = base64Url(crypto.randomBytes(64));
   const challenge = base64Url(crypto.createHash("sha256").update(verifier).digest());
   return { verifier, challenge };
 }

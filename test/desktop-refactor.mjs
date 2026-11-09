@@ -126,6 +126,7 @@ try {
   assert.equal(called[0].function.name,"ping");
   assert.equal(called[0].function.arguments,'{"v":1}');
   assert.equal(called[0].id,"call-native");
+  assert.equal(data.find((v)=>v.choices?.[0]?.finish_reason)?.choices[0].finish_reason,"tool_calls");
 }
 
   console.log("desktop refactor tests passed");
